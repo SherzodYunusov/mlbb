@@ -383,7 +383,16 @@
                                    x-text="levelInfo(acc.collection_level)?.short ?? acc.collection_level"></p>
                             </div>
                             <p class="text-[15px] font-black g-gold leading-none" x-text="fmtPrice(acc.price)"></p>
-                            <button class="btn btn-view" style="padding:8px 12px;font-size:12px">Ko'rish →</button>
+                            <div class="flex gap-1.5">
+                                <button class="btn btn-view" style="padding:8px 10px;font-size:12px;flex:1">Ko'rish →</button>
+                                <template x-if="acc.seller_telegram_id != tgId">
+                                    <button @click.stop="openBuyModal(acc)"
+                                            class="btn btn-gold"
+                                            style="padding:8px 10px;font-size:12px;flex:1">
+                                        🛒 Olish
+                                    </button>
+                                </template>
+                            </div>
                         </div>
                     </div>
                 </template>
@@ -1314,14 +1323,25 @@
                 </div>
 
                 <div class="card2 flex items-center gap-3">
-                    <div class="w-9 h-9 rounded-full bg-[rgba(124,58,237,0.2)] flex items-center justify-center text-base">👤</div>
-                    <div class="flex-1">
+                    <div class="w-9 h-9 rounded-full bg-[rgba(124,58,237,0.2)] flex items-center justify-center text-base flex-shrink-0">👤</div>
+                    <div class="flex-1 min-w-0">
                         <p class="text-xs text-muted">Sotuvchi</p>
-                        <p class="text-sm font-semibold text-ink" x-text="detail.account?.seller_name"></p>
+                        <p class="text-sm font-semibold text-ink truncate" x-text="detail.account?.seller_name"></p>
                     </div>
-                    <div class="flex items-center gap-1 text-xs text-muted">
-                        <span>👁</span>
-                        <span x-text="detail.account?.views ?? 0"></span>
+                    <div class="flex items-center gap-2">
+                        <div class="flex items-center gap-1 text-xs text-muted">
+                            <span>👁</span>
+                            <span x-text="detail.account?.views ?? 0"></span>
+                        </div>
+                        <a :href="`/profile/${detail.account?.seller_telegram_id}?viewer_id=${tgId}`"
+                           target="_blank"
+                           class="flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1.5 rounded-xl"
+                           style="background:rgba(124,58,237,0.15);border:1px solid rgba(124,58,237,0.3);color:#a78bfa;text-decoration:none">
+                            <svg width="12" height="12" fill="currentColor" viewBox="0 0 20 20">
+                                <path fill-rule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clip-rule="evenodd"/>
+                            </svg>
+                            Profil
+                        </a>
                     </div>
                 </div>
 
