@@ -152,13 +152,7 @@ class WebhookController extends Controller
 
         $this->telegram->answerCallbackQuery($callbackId);
 
-        \Illuminate\Support\Facades\Log::info('Callback', [
-            'data'        => $data,
-            'from'        => $from['id'],
-            'configAdmin' => $this->telegram->adminId,
-            'isAdmin'     => $isAdmin,
-            'chatId'      => $chatId,
-        ]);
+        \Illuminate\Support\Facades\Log::info('CB', compact('data', 'isAdmin'));
 
         // ── Foydalanuvchi: mening akkauntlarim ──
         if ($data === 'my_accounts') {
@@ -579,29 +573,8 @@ class WebhookController extends Controller
 
     private function approveRequest(int $reqId, int|string $adminChatId, int $messageId): void
     {
-        \Illuminate\Support\Facades\Log::info('approveRequest', [
-            'reqId'       => $reqId,
-            'adminChatId' => $adminChatId,
-            'messageId'   => $messageId,
-        ]);
-
-        $req = AccountRequest::with('user')->find($reqId)
-            ?? AccountRequest::with('user')->where('id', $reqId)->first();
-
-        // Diagnostics: agar hali ham topilmasa
-        if (!$req) {
-            $raw = \Illuminate\Support\Facades\DB::table('account_requests')->where('id', $reqId)->first();
-            \Illuminate\Support\Facades\Log::warning('approveRequest: not found', [
-                'reqId'    => $reqId,
-                'dbRaw'    => $raw ? ['status' => $raw->status] : null,
-                'dbExists' => $raw ? true : false,
-            ]);
-        }
-
-        \Illuminate\Support\Facades\Log::info('approveRequest find result', [
-            'found'  => $req ? true : false,
-            'status' => $req?->status,
-        ]);
+        $db  = \Illuminate\Support\Facades\DB::table('account_requests');
+        $req = $db->where('id', $reqId)->first();
 
         if (!$req) {
             $this->telegram->editMessageText($adminChatId, $messageId, "❌ So'rov topilmadi (#$reqId)");
@@ -613,7 +586,7 @@ class WebhookController extends Controller
             return;
         }
 
-        $req->update(['status' => 'active']);
+        $db->where('id', $reqId)->update(['status' => 'active', 'updated_at' => now()]);
 
         $this->telegram->editMessageText(
             $adminChatId, $messageId,
@@ -621,10 +594,11 @@ class WebhookController extends Controller
             []
         );
 
-        if ($req->user) {
+        $user = \Illuminate\Support\Facades\DB::table('users')->where('id', $req->user_id)->first();
+        if ($user) {
             $reqUrl = config('app.url') . '/webapp/requests';
             $this->telegram->sendMessage(
-                $req->user->telegram_id,
+                $user->telegram_id,
                 "✅ <b>Buyurtmangiz tasdiqlandi!</b>\n\n"
                 . "📋 Sizning akkaunt so'rovingiz e'lonlar taxtasiga qo'yildi.\n"
                 . "Sotuvchilar javob yoza boshlaydilar. 👇",
@@ -635,36 +609,15 @@ class WebhookController extends Controller
 
     private function rejectRequest(int $reqId, int|string $adminChatId, int $messageId): void
     {
-        \Illuminate\Support\Facades\Log::info('rejectRequest', [
-            'reqId'       => $reqId,
-            'adminChatId' => $adminChatId,
-            'messageId'   => $messageId,
-        ]);
-
-        $req = AccountRequest::with('user')->find($reqId)
-            ?? AccountRequest::with('user')->where('id', $reqId)->first();
-
-        // Diagnostics: agar hali ham topilmasa
-        if (!$req) {
-            $raw = \Illuminate\Support\Facades\DB::table('account_requests')->where('id', $reqId)->first();
-            \Illuminate\Support\Facades\Log::warning('rejectRequest: not found', [
-                'reqId'    => $reqId,
-                'dbRaw'    => $raw ? ['status' => $raw->status] : null,
-                'dbExists' => $raw ? true : false,
-            ]);
-        }
-
-        \Illuminate\Support\Facades\Log::info('rejectRequest find result', [
-            'found'  => $req ? true : false,
-            'status' => $req?->status,
-        ]);
+        $db  = \Illuminate\Support\Facades\DB::table('account_requests');
+        $req = $db->where('id', $reqId)->first();
 
         if (!$req) {
             $this->telegram->editMessageText($adminChatId, $messageId, "❌ So'rov topilmadi (#$reqId)");
             return;
         }
 
-        $req->update(['status' => 'closed']);
+        $db->where('id', $reqId)->update(['status' => 'closed', 'updated_at' => now()]);
 
         $this->telegram->editMessageText(
             $adminChatId, $messageId,
@@ -672,9 +625,10 @@ class WebhookController extends Controller
             []
         );
 
-        if ($req->user) {
+        $user = \Illuminate\Support\Facades\DB::table('users')->where('id', $req->user_id)->first();
+        if ($user) {
             $this->telegram->sendMessage(
-                $req->user->telegram_id,
+                $user->telegram_id,
                 "❌ <b>Afsuski, buyurtmangiz tasdiqlanmadi.</b>\n\n"
                 . "Qayta ko'rib chiqib, yangi buyurtma berishingiz mumkin."
             );
