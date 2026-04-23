@@ -1,6 +1,8 @@
 <?php
 
 use App\Http\Controllers\Api\AccountController;
+use App\Http\Controllers\Api\AccountRequestCommentController;
+use App\Http\Controllers\Api\AccountRequestController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BuyController;
 use App\Http\Controllers\Api\CommentController;
@@ -37,4 +39,17 @@ Route::middleware('throttle:60,1')->group(function () {
 // Yuklash — minutiga 30 ta
 Route::middleware('throttle:30,1')->group(function () {
     Route::post('/accounts', [AccountController::class, 'store']);
+});
+
+// Akkaunt so'rovlari (buyurtmalar)
+Route::middleware('throttle:200,1')->group(function () {
+    Route::get('/account-requests',                              [AccountRequestController::class, 'index']);
+    Route::post('/account-requests/{id}/close',                  [AccountRequestController::class, 'close']);
+    Route::get('/account-requests/{id}/comments',               [AccountRequestCommentController::class, 'index']);
+    Route::delete('/account-request-comments/{commentId}',       [AccountRequestCommentController::class, 'destroy']);
+});
+
+Route::middleware('throttle:30,1')->group(function () {
+    Route::post('/account-requests',                            [AccountRequestController::class, 'store']);
+    Route::post('/account-requests/{id}/comments',              [AccountRequestCommentController::class, 'store']);
 });

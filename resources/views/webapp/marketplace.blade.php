@@ -1646,6 +1646,13 @@
             <div x-show="tab==='market'" class="bnav-dot"></div>
         </button>
 
+        <a href="/webapp/requests" class="bnav-btn">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+            </svg>
+            <span>Qidiruv</span>
+        </a>
+
         <button @click="switchTab('sell')" class="bnav-btn" :class="tab==='sell'?'on':''">
             <div class="w-8 h-8 rounded-2xl flex items-center justify-center transition-all duration-200"
                  :style="tab==='sell' ? 'background:linear-gradient(135deg,#7c3aed,#6d28d9);box-shadow:0 4px 16px rgba(124,58,237,.5)' : 'background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.1)'">

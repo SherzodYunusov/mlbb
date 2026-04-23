@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Account;
+use App\Models\AccountRequest;
 use App\Models\Deal;
 use App\Models\LoginToken;
 use App\Models\User;
@@ -176,6 +177,22 @@ class WebhookController extends Controller
             if (!$isAdmin) return;
             $dealId = (int) substr($data, 12);
             $this->cancelDeal($dealId, $chatId, $messageId);
+            return;
+        }
+
+        // ── Admin: so'rovni tasdiqlash ──
+        if (str_starts_with($data, 'approve_req_')) {
+            if (!$isAdmin) return;
+            $reqId = (int) substr($data, 12);
+            $this->approveRequest($reqId, $chatId, $messageId);
+            return;
+        }
+
+        // ── Admin: so'rovni rad etish ──
+        if (str_starts_with($data, 'reject_req_')) {
+            if (!$isAdmin) return;
+            $reqId = (int) substr($data, 11);
+            $this->rejectRequest($reqId, $chatId, $messageId);
             return;
         }
 
@@ -504,6 +521,70 @@ class WebhookController extends Controller
             . "E'lon bozordan olib tashlandi. Keyinchalik qaytadan joylashtirishingiz mumkin.",
             []
         );
+    }
+
+    // ──────────────────────────────────────────────
+    //  ACCOUNT REQUEST: approve / reject
+    // ──────────────────────────────────────────────
+
+    private function approveRequest(int $reqId, int|string $adminChatId, int $messageId): void
+    {
+        $req = AccountRequest::with('user')->find($reqId);
+
+        if (!$req) {
+            $this->telegram->editMessageText($adminChatId, $messageId, "❌ So'rov topilmadi (#$reqId)");
+            return;
+        }
+
+        if ($req->status === 'active') {
+            $this->telegram->editMessageText($adminChatId, $messageId, "ℹ️ Bu so'rov allaqachon tasdiqlangan.");
+            return;
+        }
+
+        $req->update(['status' => 'active']);
+
+        $this->telegram->editMessageText(
+            $adminChatId, $messageId,
+            "✅ <b>So'rov #{$reqId} tasdiqlandi</b> va e'lonlar taxtasiga qo'yildi.",
+            []
+        );
+
+        if ($req->user) {
+            $reqUrl = config('app.url') . '/webapp/requests';
+            $this->telegram->sendMessage(
+                $req->user->telegram_id,
+                "✅ <b>Buyurtmangiz tasdiqlandi!</b>\n\n"
+                . "📋 Sizning akkaunt so'rovingiz e'lonlar taxtasiga qo'yildi.\n"
+                . "Sotuvchilar javob yoza boshlaydilar. 👇",
+                [[['text' => "📋 Buyurtmalar taxtasi", 'url' => $reqUrl]]]
+            );
+        }
+    }
+
+    private function rejectRequest(int $reqId, int|string $adminChatId, int $messageId): void
+    {
+        $req = AccountRequest::with('user')->find($reqId);
+
+        if (!$req) {
+            $this->telegram->editMessageText($adminChatId, $messageId, "❌ So'rov topilmadi (#$reqId)");
+            return;
+        }
+
+        $req->update(['status' => 'closed']);
+
+        $this->telegram->editMessageText(
+            $adminChatId, $messageId,
+            "❌ <b>So'rov #{$reqId} rad etildi.</b>",
+            []
+        );
+
+        if ($req->user) {
+            $this->telegram->sendMessage(
+                $req->user->telegram_id,
+                "❌ <b>Afsuski, buyurtmangiz tasdiqlanmadi.</b>\n\n"
+                . "Qayta ko'rib chiqib, yangi buyurtma berishingiz mumkin."
+            );
+        }
     }
 
     // ──────────────────────────────────────────────

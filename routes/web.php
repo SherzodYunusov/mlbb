@@ -19,3 +19,8 @@ Route::get('/profile/{telegramId}', [ProfileController::class, 'show'])
     ->where('telegramId', '[0-9]+')
     ->name('profile.show');
 
+Route::get('/webapp/requests', function () {
+    $botUsername = ltrim(config('services.telegram.bot_username', ''), '@');
+    return view('webapp.requests', compact('botUsername'));
+});
+
