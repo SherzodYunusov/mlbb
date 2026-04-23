@@ -338,10 +338,15 @@
       <div class="bnav-dot"></div>
     </a>
 
-    <button @click="openForm()" class="sell-pill mx-2">
-      <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
-        <path d="M12 5v14M5 12h14"/>
-      </svg>
+    <button @click="openForm()"
+            class="bnav-btn"
+            style="color:#a78bfa">
+      <div class="w-8 h-8 rounded-2xl flex items-center justify-center"
+           style="background:linear-gradient(135deg,#7c3aed,#6d28d9);box-shadow:0 4px 14px rgba(124,58,237,.45)">
+        <svg width="14" height="14" fill="none" stroke="white" stroke-width="2.5" viewBox="0 0 24 24">
+          <path d="M12 5v14M5 12h14"/>
+        </svg>
+      </div>
       So'rov
     </button>
 
@@ -490,22 +495,37 @@ function app() {
         toast: { show: false, msg: '' },
 
         async boot() {
-            // Telegram WebApp
             if (window.Telegram?.WebApp) {
                 Telegram.WebApp.ready();
                 Telegram.WebApp.expand();
-                const u = Telegram.WebApp.initDataUnsafe?.user;
-                if (u) this.tgId = u.id;
             }
 
-            // Token dan tgId olish (agar token URL da bo'lsa)
+            // 1. localStorage — marketplace da login bo'lgan bo'lsa (mlbb_user kalit)
+            try {
+                const saved = localStorage.getItem('mlbb_user');
+                if (saved) {
+                    const d = JSON.parse(saved);
+                    if (d?.tgId) this.tgId = d.tgId;
+                }
+            } catch {}
+
+            // 2. URL token (bot /start havolasidan kelgan bo'lsa)
             const urlParams = new URLSearchParams(location.search);
             const token     = urlParams.get('token');
-            if (token && !this.tgId) {
+            if (token) {
                 try {
                     const r = await axios.post('/api/auth/verify', { token });
-                    if (r.data?.telegram_id) this.tgId = r.data.telegram_id;
+                    const id = r.data?.tg_id ?? r.data?.telegram_id;
+                    if (id) {
+                        this.tgId = id;
+                        // localStorage ga saqlash (marketplace bilan umumiy)
+                        localStorage.setItem('mlbb_user', JSON.stringify({
+                            tgId:    id,
+                            tgUser:  { first_name: r.data?.first_name, username: r.data?.username },
+                        }));
+                    }
                 } catch {}
+                history.replaceState({}, '', location.pathname);
             }
 
             await this.loadRequests(1);
