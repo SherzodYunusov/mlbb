@@ -480,6 +480,7 @@ const BOT_USERNAME = '{{ $botUsername }}';
 function app() {
     return {
         tgId:    null,
+        tgUser:  null,
         requests: [],
         loading:  true,
         loadingMore: false,
@@ -505,7 +506,8 @@ function app() {
                 const saved = localStorage.getItem('mlbb_user');
                 if (saved) {
                     const d = JSON.parse(saved);
-                    if (d?.tgId) this.tgId = d.tgId;
+                    if (d?.tgId)   this.tgId   = d.tgId;
+                    if (d?.tgUser) this.tgUser = d.tgUser;
                 }
             } catch {}
 
@@ -517,11 +519,11 @@ function app() {
                     const r = await axios.post('/api/auth/verify', { token });
                     const id = r.data?.tg_id ?? r.data?.telegram_id;
                     if (id) {
-                        this.tgId = id;
-                        // localStorage ga saqlash (marketplace bilan umumiy)
+                        this.tgId   = id;
+                        this.tgUser = { first_name: r.data?.first_name, username: r.data?.username };
                         localStorage.setItem('mlbb_user', JSON.stringify({
-                            tgId:    id,
-                            tgUser:  { first_name: r.data?.first_name, username: r.data?.username },
+                            tgId:   this.tgId,
+                            tgUser: this.tgUser,
                         }));
                     }
                 } catch {}
@@ -566,7 +568,9 @@ function app() {
                 this.showToast('❗ Telegram orqali kiring');
                 return;
             }
-            this.form = { description: '', budget_min: '', budget_max: '', contact: '' };
+            // Username avtomatik to'ldiriladi
+            const username = this.tgUser?.username ?? '';
+            this.form = { description: '', budget_min: '', budget_max: '', contact: username };
             this.ferr = {};
             this.formOpen = true;
         },

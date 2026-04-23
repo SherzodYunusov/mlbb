@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Account;
 use App\Models\AccountRequest;
+use App\Models\Comment;
 use App\Models\Deal;
 use App\Models\LoginToken;
 use App\Models\User;
@@ -65,6 +66,30 @@ class WebhookController extends Controller
             $this->sendStart($chat['id'], $user, $param);
             return;
         }
+
+        // Boshqa har qanday xabar → yo'riqnoma
+        if ($text) {
+            $this->sendHelp($chat['id'], $user);
+        }
+    }
+
+    private function sendHelp(int|string $chatId, User $user): void
+    {
+        $token      = $this->makeToken($user);
+        $marketUrl  = config('app.url') . '/webapp?token=' . $token;
+        $profileUrl = config('app.url') . '/profile/' . $user->telegram_id;
+
+        $this->telegram->sendMessage(
+            $chatId,
+            "ℹ️ <b>MLBB Market buyruqlari:</b>\n\n"
+            . "/start — Bosh menyu\n\n"
+            . "Tugmalar orqali boshqaring 👇",
+            [
+                [['text' => '🛒 Marketplace',   'url' => $marketUrl]],
+                [['text' => '👤 Mening profilim', 'url' => $profileUrl]],
+                [['text' => '📋 Mening e\'lonlarim', 'callback_data' => 'my_accounts']],
+            ]
+        );
     }
 
     private function sendStart(int|string $chatId, User $user, ?string $param = null): void
@@ -93,16 +118,20 @@ class WebhookController extends Controller
             }
         }
 
+        $profileUrl = config('app.url') . '/profile/' . $user->telegram_id;
+
         $text = "👋 Salom, <b>{$user->first_name}</b>!\n\n"
               . "🎮 <b>MLBB Market</b> ga xush kelibsiz!\n\n"
               . "Bu yerda siz:\n"
               . "• Akkauntlarni sotib olishingiz\n"
               . "• Akkauntingizni sotishga qo'yishingiz mumkin\n\n"
-              . "⬇️ Bozorga kirish uchun tugmani bosing:";
+              . "⬇️ Quyidagi tugmalardan foydalaning:";
 
         $keyboard = [
-            [['text' => '🛒 MLBB Marketplace',    'url' => $webUrl]],
-            [['text' => '📋 Mening akkauntlarim', 'callback_data' => 'my_accounts']],
+            [['text' => '🛒 MLBB Marketplace',     'url' => $webUrl]],
+            [['text' => '👤 Mening profilim',       'url' => $profileUrl]],
+            [['text' => '📋 Mening e\'lonlarim',    'callback_data' => 'my_accounts']],
+            [['text' => '🔍 Akkaunt qidiruv',       'url' => config('app.url') . '/webapp/requests']],
         ];
 
         $this->telegram->sendMessage($chatId, $text, $keyboard);
@@ -137,6 +166,22 @@ class WebhookController extends Controller
                 "📋 <b>Mening akkauntlarim</b>\n\nQuyidagi tugmani bosing:",
                 [[['text' => "📋 Akkauntlarimni ko'rish", 'url' => $url]]]
             );
+            return;
+        }
+
+        // ── Admin: so'rovni tasdiqlash (approve_req_ — approve_ dan OLDIN) ──
+        if (str_starts_with($data, 'approve_req_')) {
+            if (!$isAdmin) return;
+            $reqId = (int) substr($data, 12);
+            $this->approveRequest($reqId, $chatId, $messageId);
+            return;
+        }
+
+        // ── Admin: so'rovni rad etish (reject_req_ — reject_ dan OLDIN) ──
+        if (str_starts_with($data, 'reject_req_')) {
+            if (!$isAdmin) return;
+            $reqId = (int) substr($data, 11);
+            $this->rejectRequest($reqId, $chatId, $messageId);
             return;
         }
 
@@ -180,19 +225,16 @@ class WebhookController extends Controller
             return;
         }
 
-        // ── Admin: so'rovni tasdiqlash ──
-        if (str_starts_with($data, 'approve_req_')) {
+        // ── Admin: izohni yashirish ──
+        if (str_starts_with($data, 'hide_comment_')) {
             if (!$isAdmin) return;
-            $reqId = (int) substr($data, 12);
-            $this->approveRequest($reqId, $chatId, $messageId);
-            return;
-        }
-
-        // ── Admin: so'rovni rad etish ──
-        if (str_starts_with($data, 'reject_req_')) {
-            if (!$isAdmin) return;
-            $reqId = (int) substr($data, 11);
-            $this->rejectRequest($reqId, $chatId, $messageId);
+            $commentId = (int) substr($data, 13);
+            $comment   = Comment::find($commentId);
+            if ($comment) {
+                $comment->update(['is_hidden' => true]);
+                $this->telegram->editMessageReplyMarkup($chatId, $messageId, []);
+                $this->telegram->answerCallbackQuery($callbackId, '🚫 Izoh yashirildi', true);
+            }
             return;
         }
 
