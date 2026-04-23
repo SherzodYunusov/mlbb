@@ -152,6 +152,14 @@ class WebhookController extends Controller
 
         $this->telegram->answerCallbackQuery($callbackId);
 
+        \Illuminate\Support\Facades\Log::info('Callback', [
+            'data'        => $data,
+            'from'        => $from['id'],
+            'configAdmin' => $this->telegram->adminId,
+            'isAdmin'     => $isAdmin,
+            'chatId'      => $chatId,
+        ]);
+
         // ── Foydalanuvchi: mening akkauntlarim ──
         if ($data === 'my_accounts') {
             $user = User::where('telegram_id', $from['id'])->first();
@@ -571,7 +579,29 @@ class WebhookController extends Controller
 
     private function approveRequest(int $reqId, int|string $adminChatId, int $messageId): void
     {
-        $req = AccountRequest::with('user')->find($reqId);
+        \Illuminate\Support\Facades\Log::info('approveRequest', [
+            'reqId'       => $reqId,
+            'adminChatId' => $adminChatId,
+            'messageId'   => $messageId,
+        ]);
+
+        $req = AccountRequest::with('user')->find($reqId)
+            ?? AccountRequest::with('user')->where('id', $reqId)->first();
+
+        // Diagnostics: agar hali ham topilmasa
+        if (!$req) {
+            $raw = \Illuminate\Support\Facades\DB::table('account_requests')->where('id', $reqId)->first();
+            \Illuminate\Support\Facades\Log::warning('approveRequest: not found', [
+                'reqId'    => $reqId,
+                'dbRaw'    => $raw ? ['status' => $raw->status] : null,
+                'dbExists' => $raw ? true : false,
+            ]);
+        }
+
+        \Illuminate\Support\Facades\Log::info('approveRequest find result', [
+            'found'  => $req ? true : false,
+            'status' => $req?->status,
+        ]);
 
         if (!$req) {
             $this->telegram->editMessageText($adminChatId, $messageId, "❌ So'rov topilmadi (#$reqId)");
@@ -605,7 +635,29 @@ class WebhookController extends Controller
 
     private function rejectRequest(int $reqId, int|string $adminChatId, int $messageId): void
     {
-        $req = AccountRequest::with('user')->find($reqId);
+        \Illuminate\Support\Facades\Log::info('rejectRequest', [
+            'reqId'       => $reqId,
+            'adminChatId' => $adminChatId,
+            'messageId'   => $messageId,
+        ]);
+
+        $req = AccountRequest::with('user')->find($reqId)
+            ?? AccountRequest::with('user')->where('id', $reqId)->first();
+
+        // Diagnostics: agar hali ham topilmasa
+        if (!$req) {
+            $raw = \Illuminate\Support\Facades\DB::table('account_requests')->where('id', $reqId)->first();
+            \Illuminate\Support\Facades\Log::warning('rejectRequest: not found', [
+                'reqId'    => $reqId,
+                'dbRaw'    => $raw ? ['status' => $raw->status] : null,
+                'dbExists' => $raw ? true : false,
+            ]);
+        }
+
+        \Illuminate\Support\Facades\Log::info('rejectRequest find result', [
+            'found'  => $req ? true : false,
+            'status' => $req?->status,
+        ]);
 
         if (!$req) {
             $this->telegram->editMessageText($adminChatId, $messageId, "❌ So'rov topilmadi (#$reqId)");

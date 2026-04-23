@@ -19,13 +19,10 @@ class AccountRequest extends Model
         'admin_message_id',
     ];
 
-    protected function casts(): array
-    {
-        return [
-            'budget_min' => 'decimal:2',
-            'budget_max' => 'decimal:2',
-        ];
-    }
+    protected $casts = [
+        'budget_min' => 'float',
+        'budget_max' => 'float',
+    ];
 
     public function user(): BelongsTo
     {

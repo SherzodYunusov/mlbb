@@ -418,19 +418,8 @@
         </div>
       </div>
 
-      {{-- Contact --}}
-      <div>
-        <label class="block text-xs font-semibold mb-1.5" style="color:var(--muted)">
-          Aloqa (Telegram username)
-        </label>
-        <div class="relative">
-          <span class="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-bold" style="color:var(--muted)">@</span>
-          <input x-model="form.contact" type="text"
-                 class="inp" style="padding-left:28px"
-                 placeholder="username">
-        </div>
-        <p class="text-[10px] mt-1" style="color:var(--muted)">Ixtiyoriy. Ko'rsatmasangiz izohlar orqali bog'lanishadi.</p>
-      </div>
+      {{-- Contact — hidden, auto-populated from tgUser.username --}}
+      <input type="hidden" x-model="form.contact">
 
       {{-- Error --}}
       <div x-show="ferr.general"
