@@ -48,18 +48,6 @@ class AccountRequestController extends Controller
 
         $user = User::where('telegram_id', $request->integer('telegram_id'))->firstOrFail();
 
-        // Foydalanuvchining "pending" buyurtmasi bormi? (spam old.)
-        $pending = AccountRequest::where('user_id', $user->id)
-            ->whereIn('status', ['pending', 'active'])
-            ->count();
-
-        if ($pending >= 3) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Siz allaqachon 3 ta faol buyurtmaga egasiz.',
-            ], 422);
-        }
-
         $req = AccountRequest::create([
             'user_id'     => $user->id,
             'description' => $request->input('description'),
