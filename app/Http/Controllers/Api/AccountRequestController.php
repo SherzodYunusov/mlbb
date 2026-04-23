@@ -117,7 +117,7 @@ class AccountRequestController extends Controller
 
     private function notifyAdmin(User $user, AccountRequest $req): void
     {
-        $adminId = $this->telegram->adminId;
+        $adminId = $this->telegram->adminChannelId;
         if (!$adminId) return;
 
         $name    = $user->username ? "@{$user->username}" : $user->first_name;
