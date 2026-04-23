@@ -224,6 +224,22 @@ class TelegramService
     //  CALLBACK
     // ══════════════════════════════════════════════
 
+    public function copyMessage(int|string $chatId, int|string $fromChatId, int $messageId): ?int
+    {
+        $response = Http::post("{$this->baseUrl}/copyMessage", [
+            'chat_id'      => $chatId,
+            'from_chat_id' => $fromChatId,
+            'message_id'   => $messageId,
+        ]);
+
+        if (!$response->successful()) {
+            Log::error('Telegram copyMessage failed', ['body' => $response->json()]);
+            return null;
+        }
+
+        return $response->json('result.message_id');
+    }
+
     public function answerCallbackQuery(string $callbackQueryId, string $text = '', bool $showAlert = false): void
     {
         Http::post("{$this->baseUrl}/answerCallbackQuery", [

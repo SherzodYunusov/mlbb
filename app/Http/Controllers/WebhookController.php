@@ -67,6 +67,32 @@ class WebhookController extends Controller
             return;
         }
 
+        // Faol bitim relay — xaridor ↔ sotuvchi xabarlari bot orqali
+        $deal = Deal::where('status', 'ongoing')
+            ->where(function ($q) use ($user) {
+                $q->where('buyer_id', $user->id)->orWhere('seller_id', $user->id);
+            })
+            ->with(['buyer', 'seller'])
+            ->first();
+
+        if ($deal) {
+            $isBuyer = $deal->buyer_id === $user->id;
+            $role    = $isBuyer ? '🛒 Xaridor' : '👤 Sotuvchi';
+            $other   = $isBuyer ? $deal->seller : $deal->buyer;
+
+            if ($text) {
+                $this->telegram->sendMessage(
+                    $other->telegram_id,
+                    "💬 <b>{$role}:</b>\n" . htmlspecialchars($text, ENT_QUOTES, 'UTF-8')
+                );
+            } else {
+                // Rasm, fayl, ovoz — copyMessage bilan relay
+                $this->telegram->sendMessage($other->telegram_id, "💬 <b>{$role}:</b> 👇");
+                $this->telegram->copyMessage($other->telegram_id, $chat['id'], $message['message_id']);
+            }
+            return;
+        }
+
         // Boshqa har qanday xabar → yo'riqnoma
         if ($text) {
             $this->sendHelp($chat['id'], $user);
@@ -358,84 +384,42 @@ class WebhookController extends Controller
         $buyerName  = $deal->buyer->username  ? "@{$deal->buyer->username}"  : $deal->buyer->first_name;
         $sellerName = $deal->seller->username ? "@{$deal->seller->username}" : $deal->seller->first_name;
         $price      = number_format($deal->account->price, 0, '.', ' ');
-        $dealsGroupId = config('services.telegram.deals_group_id');
+        $level      = $deal->account->collection_level;
 
-        // ── Forum topic yaratish (deals guruhida) ──
-        $topicName = "Deal #{$dealId} — {$deal->account->collection_level}";
-        $topicId   = $dealsGroupId
-            ? $this->telegram->createForumTopic($dealsGroupId, $topicName)
-            : null;
+        // Xaridorga: relay ko'rsatmasi
+        $this->telegram->sendMessage(
+            $deal->buyer->telegram_id,
+            "🛒 <b>Sotib olish tasdiqlandi!</b>\n\n"
+            . "🎮 <b>{$level}</b>\n"
+            . "💰 {$price} so'm\n\n"
+            . "✉️ Endi <b>shu botga</b> xabar yozing — sotuvchiga yetkaziladi.\n"
+            . "Akkaunt ma'lumotlarini so'rang, to'lovni amalga oshiring.\n\n"
+            . "⚠️ <b>To'lovni faqat admin tasdiqlashidan keyin o'tkazing!</b>"
+        );
 
-        if ($topicId) {
-            $deal->update(['group_chat_id' => $dealsGroupId, 'topic_id' => $topicId]);
+        // Sotuvchiga: relay ko'rsatmasi
+        $this->telegram->sendMessage(
+            $deal->seller->telegram_id,
+            "💰 <b>Akkauntingizni sotib olmoqchi!</b>\n\n"
+            . "🎮 <b>{$level}</b>\n"
+            . "🛒 Xaridor: {$buyerName}\n\n"
+            . "✉️ Endi <b>shu botga</b> xabar yozing — xaridorga yetkaziladi.\n"
+            . "Xaridor to'lovini tasdiqlagan so'ng akkaunt ma'lumotlarini yuboring.\n\n"
+            . "⚠️ <b>Akkaunt parolini faqat to'lov kelganidan keyin yuboring!</b>"
+        );
 
-            // Guruhga xabar yuborish
-            $this->telegram->sendMessage(
-                $dealsGroupId,
-                "🤝 <b>Yangi bitim #{$dealId}</b>\n\n"
-                . "💰 Narx: <b>{$price} so'm</b>\n"
-                . "🏆 {$deal->account->collection_level}\n\n"
-                . "🛒 Xaridor: {$buyerName}\n"
-                . "👤 Sotuvchi: {$sellerName}",
-                [],
-                $topicId
-            );
-
-            // Invite linklar yaratish
-            $buyerLink  = $this->telegram->createInviteLink($dealsGroupId, "Buyer #{$dealId}");
-            $sellerLink = $this->telegram->createInviteLink($dealsGroupId, "Seller #{$dealId}");
-
-            // Xaridorga guruh linki
-            $this->telegram->sendMessage(
-                $deal->buyer->telegram_id,
-                "🤝 <b>Sotib olish tasdiqlandi!</b>\n\n"
-                . "💰 Narx: <b>{$price} so'm</b>\n"
-                . "🏆 {$deal->account->collection_level}\n\n"
-                . "Quyidagi tugma orqali maxsus guruhga kiring:",
-                $buyerLink ? [[['text' => '👥 Guruhga kirish', 'url' => $buyerLink]]] : []
-            );
-
-            // Sotuvchiga guruh linki
-            $this->telegram->sendMessage(
-                $deal->seller->telegram_id,
-                "🔔 <b>Akkauntingizni sotib olmoqchi!</b>\n\n"
-                . "💰 Narx: <b>{$price} so'm</b>\n"
-                . "🛒 Xaridor: {$buyerName}\n\n"
-                . "Quyidagi tugma orqali maxsus guruhga kiring:",
-                $sellerLink ? [[['text' => '👥 Guruhga kirish', 'url' => $sellerLink]]] : []
-            );
-
-        } else {
-            // Guruh sozlanmagan — admin username yuboriladi
-            $adminUsername = config('services.telegram.admin_username', 'admin');
-
-            $this->telegram->sendMessage(
-                $deal->buyer->telegram_id,
-                "🤝 <b>Sotib olish tasdiqlandi!</b>\n\n"
-                . "💰 Narx: <b>{$price} so'm</b>\n"
-                . "Admin tez orada bog'lanadi: @{$adminUsername}"
-            );
-
-            $this->telegram->sendMessage(
-                $deal->seller->telegram_id,
-                "🔔 <b>Akkauntingizni sotib olishmoqchi!</b>\n\n"
-                . "🛒 Xaridor: {$buyerName}\n"
-                . "Admin tez orada bog'lanadi: @{$adminUsername}"
-            );
-        }
-
-        // Admin xabarini yangilash + "Yakunlash" tugmasi
+        // Admin xabarini yangilash
         $this->telegram->editMessageText(
             $adminChatId, $messageId,
             "🤝 <b>Bitim #{$dealId} boshlandi!</b>\n\n"
-            . "🏆 {$deal->account->collection_level}\n"
+            . "🎮 {$level}\n"
             . "💰 {$price} so'm\n"
             . "🛒 Xaridor: {$buyerName}\n"
             . "👤 Sotuvchi: {$sellerName}\n\n"
-            . ($topicId ? "✅ Guruh yaratildi, ikkalasiga link yuborildi." : "📩 Admin orqali bog'lanish."),
+            . "✉️ Xabarlar bot orqali relay qilinmoqda.",
             [[
-                ['text' => '✅ Yakunlash',     'callback_data' => "complete_deal_{$dealId}"],
-                ['text' => '❌ Bekor qilish',  'callback_data' => "cancel_deal_{$dealId}"],
+                ['text' => '✅ Yakunlash',    'callback_data' => "complete_deal_{$dealId}"],
+                ['text' => '❌ Bekor qilish', 'callback_data' => "cancel_deal_{$dealId}"],
             ]]
         );
     }
