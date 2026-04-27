@@ -262,6 +262,20 @@ class WebhookController extends Controller
             return;
         }
 
+        // ── Xaridor: pending_admin da o'zi bekor qiladi ──
+        if (str_starts_with($data, 'buyer_cancel_')) {
+            $dealId = (int) substr($data, 13);
+            $this->buyerCancelDeal($dealId, $from['id'], $callbackId, $chatId, $messageId);
+            return;
+        }
+
+        // ── Sotuvchi: ongoing da bitimdan chiqadi ──
+        if (str_starts_with($data, 'seller_cancel_')) {
+            $dealId = (int) substr($data, 14);
+            $this->sellerCancelDeal($dealId, $from['id'], $callbackId, $chatId, $messageId);
+            return;
+        }
+
         // ── Sotib olish tugmasi (kanaldan) ──
         if (str_starts_with($data, 'buy_')) {
             $accountId = (int) substr($data, 4);
@@ -380,6 +394,108 @@ class WebhookController extends Controller
         return implode("\n", $lines);
     }
 
+    private function buyerCancelDeal(int $dealId, int $fromTgId, string $callbackId, int|string $chatId, int $messageId): void
+    {
+        $deal = Deal::with(['account', 'buyer', 'seller'])->find($dealId);
+
+        if (!$deal || $deal->status !== 'pending_admin') {
+            $this->telegram->answerCallbackQuery($callbackId, '❗ Bekor qilish mumkin emas', true);
+            return;
+        }
+
+        if ($deal->buyer->telegram_id !== $fromTgId) {
+            $this->telegram->answerCallbackQuery($callbackId, '⛔ Bu sizning so\'rovingiz emas', true);
+            return;
+        }
+
+        $deal->update(['status' => 'cancelled']);
+        $deal->account->update(['status' => 'active']);
+
+        $price = number_format($deal->account->price, 0, '.', ' ');
+        $level = $deal->account->collection_level;
+
+        $this->telegram->editMessageText(
+            $chatId, $messageId,
+            "❌ <b>So'rovingiz bekor qilindi.</b>\n\n"
+            . "🎮 {$level}\n"
+            . "💰 {$price} so'm",
+            []
+        );
+
+        // Adminga xabar
+        if ($deal->admin_message_id) {
+            $this->telegram->editMessageText(
+                $this->telegram->adminId,
+                (int) $deal->admin_message_id,
+                "❌ <b>Xaridor so'rovni bekor qildi.</b>\n\n"
+                . "🎮 {$level} — #{$deal->account_id}\n"
+                . "Akkaunt qayta sotuvga qo'yildi.",
+                []
+            );
+        }
+
+        SendTelegramMessage::dispatch(
+            $deal->seller->telegram_id,
+            "ℹ️ <b>Xaridor bitimdan chiqdi.</b>\n\n"
+            . "🎮 {$level}\n\n"
+            . "Akkauntingiz qayta sotuvga qo'yildi. ✅"
+        );
+
+        $this->telegram->answerCallbackQuery($callbackId, '✅ Bekor qilindi');
+    }
+
+    private function sellerCancelDeal(int $dealId, int $fromTgId, string $callbackId, int|string $chatId, int $messageId): void
+    {
+        $deal = Deal::with(['account', 'buyer', 'seller'])->find($dealId);
+
+        if (!$deal || !in_array($deal->status, ['pending_admin', 'ongoing'])) {
+            $this->telegram->answerCallbackQuery($callbackId, '❗ Bitimdan chiqish mumkin emas', true);
+            return;
+        }
+
+        if ($deal->seller->telegram_id !== $fromTgId) {
+            $this->telegram->answerCallbackQuery($callbackId, '⛔ Bu sizning akkauntingiz emas', true);
+            return;
+        }
+
+        $deal->update(['status' => 'cancelled']);
+        $deal->account->update(['status' => 'active']);
+
+        $price = number_format($deal->account->price, 0, '.', ' ');
+        $level = $deal->account->collection_level;
+
+        $this->telegram->editMessageText(
+            $chatId, $messageId,
+            "❌ <b>Bitimdan chiqdingiz.</b>\n\n"
+            . "🎮 {$level}\n"
+            . "💰 {$price} so'm\n\n"
+            . "Akkauntingiz qayta sotuvga qo'yildi.",
+            []
+        );
+
+        // Adminga xabar
+        if ($deal->admin_message_id) {
+            $this->telegram->editMessageText(
+                $this->telegram->adminId,
+                (int) $deal->admin_message_id,
+                "⚠️ <b>Sotuvchi bitimdan chiqdi!</b>\n\n"
+                . "🎮 {$level} — #{$deal->account_id}\n"
+                . "Akkaunt qayta sotuvga qo'yildi.",
+                []
+            );
+        }
+
+        SendTelegramMessage::dispatch(
+            $deal->buyer->telegram_id,
+            "😔 <b>Sotuvchi bitimdan chiqdi.</b>\n\n"
+            . "🎮 {$level}\n"
+            . "💰 {$price} so'm\n\n"
+            . "Boshqa akkauntlarni ko'rish uchun marketplace ga kiring."
+        );
+
+        $this->telegram->answerCallbackQuery($callbackId, '✅ Bitimdan chiqdingiz');
+    }
+
     private function handleBuyRequest(int $accountId, string $callbackId, int $buyerTgId): void
     {
         $account = Account::with('user')->find($accountId);
@@ -456,7 +572,9 @@ class WebhookController extends Controller
             $buyerTgId,
             "⏳ <b>So'rovingiz yuborildi!</b>\n\n"
             . "Admin tez orada ko'rib chiqadi.\n"
-            . "Akkaunt: <b>#{$account->id}</b> — {$price} so'm"
+            . "Akkaunt: <b>#{$account->id}</b> — {$price} so'm\n\n"
+            . "Fikridan qaytgan bo'lsangiz, quyidagi tugmani bosing:",
+            [[['text' => '❌ Bekor qilish', 'callback_data' => "buyer_cancel_{$deal->id}"]]]
         );
     }
 
@@ -535,7 +653,8 @@ class WebhookController extends Controller
             . "🛒 Xaridor: {$buyerName}\n\n"
             . "✉️ Endi <b>shu botga</b> xabar yozing — xaridorga yetkaziladi.\n"
             . "Xaridor to'lovini tasdiqlagan so'ng akkaunt ma'lumotlarini yuboring.\n\n"
-            . "⚠️ <b>Akkaunt parolini faqat to'lov kelganidan keyin yuboring!</b>"
+            . "⚠️ <b>Akkaunt parolini faqat to'lov kelganidan keyin yuboring!</b>",
+            [[['text' => '❌ Bitimdan chiqish', 'callback_data' => "seller_cancel_{$deal->id}"]]]
         );
 
         // Admin xabarini yangilash — bu sinxron qoladi (admin darhol ko'rishi kerak)

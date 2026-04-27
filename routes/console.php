@@ -10,3 +10,6 @@ Artisan::command('inspire', function () {
 
 // Har kuni ertalab 9:00 da checkin tekshiruvi
 Schedule::command('bot:checkin')->dailyAt('09:00');
+
+// Har soatda javobsiz bitimlarni bekor qilish
+Schedule::command('deal:timeout')->hourly();
