@@ -217,17 +217,15 @@
               </template>
             </div>
 
-            {{-- Reply button --}}
-            <template x-if="!tgId || req.poster_tg_id != tgId">
-              <button @click="openComment(req)"
-                      class="w-full py-2.5 rounded-xl text-sm font-semibold"
-                      style="background:rgba(124,58,237,.12);border:1px solid rgba(124,58,237,.3);color:#a78bfa">
-                💬 Javob yozish
-                <span x-show="req.comments_count > 0"
-                      class="ml-1 text-[11px] opacity-60"
-                      x-text="`(${req.comments_count})`"></span>
-              </button>
-            </template>
+            {{-- Reply button — everyone can open comments --}}
+            <button @click="openComment(req)"
+                    class="w-full py-2.5 rounded-xl text-sm font-semibold"
+                    style="background:rgba(124,58,237,.12);border:1px solid rgba(124,58,237,.3);color:#a78bfa">
+              <span x-text="req.poster_tg_id == tgId ? '💬 Kommentlar' : '💬 Javob yozish'"></span>
+              <span x-show="req.comments_count > 0"
+                    class="ml-1 text-[11px] opacity-60"
+                    x-text="`(${req.comments_count})`"></span>
+            </button>
           </div>
 
           {{-- Comments --}}
