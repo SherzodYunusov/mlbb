@@ -2,8 +2,9 @@
 
 namespace App\Console\Commands;
 
+use App\Jobs\SendTelegramMessage;
 use App\Models\Account;
-use App\Services\TelegramService;
+use App\Models\Deal;
 use Illuminate\Console\Command;
 
 class BotCheckinCommand extends Command
@@ -11,12 +12,18 @@ class BotCheckinCommand extends Command
     protected $signature   = 'bot:checkin';
     protected $description = '3 kundan ortiq e\'lonlarga aktuallik tekshiruvi yuborish';
 
-    public function handle(TelegramService $telegram): int
+    public function handle(): int
     {
+        // Faol savdodagi akkauntlar ID lari (checkin yubormaslik uchun)
+        $busyAccountIds = Deal::whereIn('status', ['pending_admin', 'ongoing'])
+            ->pluck('account_id')
+            ->toArray();
+
         // ── 1. 24 soatdan ortiq javob bermagan e'lonlarni arxivlash ──
         $expired = Account::where('status', 'active')
             ->whereNotNull('checkin_sent_at')
             ->where('checkin_sent_at', '<', now()->subHours(24))
+            ->whereNotIn('id', $busyAccountIds)
             ->with('user')
             ->get();
 
@@ -27,7 +34,7 @@ class BotCheckinCommand extends Command
 
             if (!$account->user) continue;
 
-            $telegram->sendMessage(
+            SendTelegramMessage::dispatch(
                 $account->user->telegram_id,
                 "📦 <b>E'lon avtomatik arxivlandi</b>\n\n"
                 . "🎮 <b>{$account->collection_level}</b>\n\n"
@@ -39,6 +46,7 @@ class BotCheckinCommand extends Command
         // ── 2. 3 kundan ortiq tasdiqlanmagan faol e'lonlarga xabar yuborish ──
         $stale = Account::where('status', 'active')
             ->whereNull('checkin_sent_at')
+            ->whereNotIn('id', $busyAccountIds)
             ->where(function ($q) {
                 $q->whereNull('last_confirmed_at')
                   ->orWhere('last_confirmed_at', '<', now()->subDays(3));
@@ -53,7 +61,7 @@ class BotCheckinCommand extends Command
 
             $this->line("📨 Checkin yuborildi #{$account->id}: {$account->collection_level}");
 
-            $telegram->sendMessage(
+            SendTelegramMessage::dispatch(
                 $account->user->telegram_id,
                 "🔔 <b>E'lon aktualligini tekshiring</b>\n\n"
                 . "🎮 <b>{$account->collection_level}</b> e'loningiz hali ham sotuvdami?\n\n"

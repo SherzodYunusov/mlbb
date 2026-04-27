@@ -154,11 +154,13 @@ class WebhookController extends Controller
               . "• Akkauntingizni sotishga qo'yishingiz mumkin\n\n"
               . "⬇️ Quyidagi tugmalardan foydalaning:";
 
+        $requestsUrl = config('app.url') . '/webapp/requests?token=' . $token;
+
         $keyboard = [
             [['text' => '🛒 MLBB Marketplace',     'url' => $webUrl]],
             [['text' => '👤 Mening profilim',       'url' => $profileUrl]],
             [['text' => '📋 Mening e\'lonlarim',    'callback_data' => 'my_accounts']],
-            [['text' => '🔍 Akkaunt qidiruv',       'url' => config('app.url') . '/webapp/requests']],
+            [['text' => '🔍 Akkaunt qidiruv',       'url' => $requestsUrl]],
         ];
 
         $this->telegram->sendMessage($chatId, $text, $keyboard);
@@ -177,7 +179,16 @@ class WebhookController extends Controller
         $callbackId  = $callback['id'];
         $isAdmin     = $from['id'] === $this->telegram->adminId;
 
-        $this->telegram->answerCallbackQuery($callbackId);
+        // buy_, buyer_cancel_, seller_cancel_, hide_comment_ o'z answerCallbackQuery ni chaqiradi
+        // (show_alert ishlatadi) — ular uchun bu yerda javob bermaslik kerak
+        $selfAnswered = ['buy_', 'buyer_cancel_', 'seller_cancel_', 'hide_comment_'];
+        $hasSelfAnswer = false;
+        foreach ($selfAnswered as $prefix) {
+            if (str_starts_with($data, $prefix)) { $hasSelfAnswer = true; break; }
+        }
+        if (!$hasSelfAnswer) {
+            $this->telegram->answerCallbackQuery($callbackId);
+        }
 
         \Illuminate\Support\Facades\Log::info('CB', compact('data', 'isAdmin'));
 
