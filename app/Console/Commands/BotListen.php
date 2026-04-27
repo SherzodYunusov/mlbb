@@ -2,7 +2,6 @@
 
 namespace App\Console\Commands;
 
-use App\Http\Controllers\BotController;
 use App\Http\Controllers\WebhookController;
 use App\Services\TelegramService;
 use Illuminate\Console\Command;
@@ -14,7 +13,7 @@ class BotListen extends Command
     protected $signature   = 'bot:listen';
     protected $description = 'Telegram bot callback tugmalarini (approve/reject) tinglaydi';
 
-    public function handle(TelegramService $telegram, BotController $bot, WebhookController $webhook): void
+    public function handle(TelegramService $telegram, WebhookController $webhook): void
     {
         // ── 1. Webhookni o'chiramiz (getUpdates bilan conflict bo'lmasligi uchun) ──
         $this->deleteWebhook();
@@ -62,12 +61,8 @@ class BotListen extends Command
                         . "→ <fg=white>{$data}</>"
                     );
 
-                    // ── 5. Handlega uzatamiz ──
-                    if (isset($update['callback_query'])) {
-                        $bot->handleUpdate($update);       // approve / reject
-                    } elseif (isset($update['message'])) {
-                        $webhook->handleUpdate($update);   // /start va boshqa xabarlar
-                    }
+                    // ── 5. Handlega uzatamiz — hammasi WebhookController orqali ──
+                    $webhook->handleUpdate($update);
 
                     // ── 6. Offsetni yangilaymiz ──
                     $offset = $updateId + 1;

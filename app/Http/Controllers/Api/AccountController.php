@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Jobs\NotifyAdminJob;
 use App\Models\Account;
 use App\Models\AccountMedia;
+use App\Models\Deal;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -58,6 +59,12 @@ class AccountController extends Controller
 
         $paginator = $query->paginate(self::PER_PAGE, ['*'], 'page', $page);
 
+        $inDealIds = Deal::whereIn('account_id', $paginator->getCollection()->pluck('id'))
+            ->whereIn('status', ['pending_admin', 'ongoing'])
+            ->pluck('account_id')
+            ->flip()
+            ->all();
+
         $data = $paginator->getCollection()->map(fn(Account $a) => [
             'id'                  => $a->id,
             'price'               => (float) $a->price,
@@ -83,6 +90,7 @@ class AccountController extends Controller
                                      ? Storage::url($vid->file_id) : null,
             'video_size'          => $a->video_size ? (float) $a->video_size : null,
             'views'               => (int) $a->views,
+            'in_deal'             => isset($inDealIds[$a->id]),
             'created_at'          => $a->created_at->toISOString(),
         ]);
 
@@ -153,6 +161,17 @@ class AccountController extends Controller
         ]);
 
         $user = User::where('telegram_id', $request->integer('telegram_id'))->firstOrFail();
+
+        $activeCount = Account::where('user_id', $user->id)
+            ->whereIn('status', ['pending', 'active'])
+            ->count();
+
+        if ($activeCount >= 3) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Bir vaqtda ko\'pi bilan 3 ta akkaunt sotuvga qo\'yish mumkin. Biri sotilgandan keyin yangi qo\'sha olasiz.',
+            ], 429);
+        }
 
         try {
             $result = DB::transaction(function () use ($request, $user): array {
@@ -276,7 +295,17 @@ class AccountController extends Controller
             return response()->json(['success' => false, 'message' => 'Ruxsat yo\'q'], 403);
         }
 
-        // Media fayllarni o'chirish
+        $hasActiveDeal = Deal::where('account_id', $account->id)
+            ->whereIn('status', ['pending_admin', 'ongoing'])
+            ->exists();
+
+        if ($hasActiveDeal) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Faol bitim mavjud. Bitim yakunlangandan keyin o\'chirishingiz mumkin.',
+            ], 422);
+        }
+
         foreach ($account->media as $media) {
             Storage::disk('public')->delete($media->file_id);
         }

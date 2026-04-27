@@ -122,6 +122,18 @@ class BotController extends Controller
             return;
         }
 
+        // Xaridor 1 soat ichida shu akkaunt bo'yicha bekor qilingan deal qilganmi?
+        $recentCancel = Deal::where('account_id', $accountId)
+            ->where('buyer_id', $buyer->id)
+            ->where('status', 'cancelled')
+            ->where('updated_at', '>=', now()->subHour())
+            ->exists();
+
+        if ($recentCancel) {
+            $this->telegram->answerCallbackQuery($callbackId, '⏳ Siz bu akkaunt bo\'yicha qayta so\'rov yuborishingiz uchun 1 soat kutishingiz kerak', true);
+            return;
+        }
+
         // Deal yaratamiz
         $deal = Deal::create([
             'account_id' => $account->id,

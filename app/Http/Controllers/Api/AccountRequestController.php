@@ -48,6 +48,17 @@ class AccountRequestController extends Controller
 
         $user = User::where('telegram_id', $request->integer('telegram_id'))->firstOrFail();
 
+        $recentCount = AccountRequest::where('user_id', $user->id)
+            ->where('created_at', '>=', now()->subHours(24))
+            ->count();
+
+        if ($recentCount >= 3) {
+            return response()->json([
+                'success' => false,
+                'message' => '24 soat ichida ko\'pi bilan 3 ta ariza yuborishingiz mumkin. Ertaga qayta urinib ko\'ring.',
+            ], 429);
+        }
+
         $req = AccountRequest::create([
             'user_id'     => $user->id,
             'description' => $request->input('description'),

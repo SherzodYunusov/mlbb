@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Account;
+use App\Jobs\SendTelegramMessage;
 use App\Models\AccountRequest;
 use App\Models\Comment;
 use App\Models\Deal;
@@ -253,6 +254,21 @@ class WebhookController extends Controller
             return;
         }
 
+        // ── finish_deal_ = complete_deal_ ning sinonimidir (BotController dan kelgan eski tugmalar) ──
+        if (str_starts_with($data, 'finish_deal_')) {
+            if (!$isAdmin) return;
+            $dealId = (int) substr($data, 12);
+            $this->completeDeal($dealId, $chatId, $messageId);
+            return;
+        }
+
+        // ── Sotib olish tugmasi (kanaldan) ──
+        if (str_starts_with($data, 'buy_')) {
+            $accountId = (int) substr($data, 4);
+            $this->handleBuyRequest($accountId, $callbackId, $from['id']);
+            return;
+        }
+
         // ── Admin: izohni yashirish ──
         if (str_starts_with($data, 'hide_comment_')) {
             if (!$isAdmin) return;
@@ -305,27 +321,142 @@ class WebhookController extends Controller
 
         $account->update(['status' => 'active', 'last_confirmed_at' => now()]);
 
-        // Admin xabarini yangilash
-        $this->telegram->editMessageText(
-            $adminChatId, $messageId,
-            "✅ <b>Tasdiqlandi!</b> Akkaunt #{$accountId} sotuvga qo'yildi.",
-            []
-        );
+        // Kanal xabarini "Sotib olish" tugmasi bilan yangilash
+        if ($account->channel_message_id) {
+            $this->telegram->editMessageText(
+                $this->telegram->adminChannelId,
+                (int) $account->channel_message_id,
+                $this->buildAccountText($account, '✅ TASDIQLANDI — Sotuvda'),
+                [[['text' => '💰 Sotib olish', 'callback_data' => "buy_{$account->id}"]]]
+            );
+        } else {
+            $this->telegram->editMessageText(
+                $adminChatId, $messageId,
+                "✅ <b>Tasdiqlandi!</b> Akkaunt #{$accountId} sotuvga qo'yildi.",
+                []
+            );
+        }
 
-        // Sotuvchiga xabar (foydalanuvchi o'chirilgan bo'lishi mumkin)
         $seller = $account->user;
         if (!$seller) return;
 
         $token = $this->makeToken($seller);
         $url   = config('app.url') . '/webapp?token=' . $token . '&tab=profile';
 
-        $this->telegram->sendMessage(
+        SendTelegramMessage::dispatch(
             $seller->telegram_id,
             "✅ <b>Akkauntingiz tasdiqlandi!</b>\n\n"
             . "🏆 {$account->collection_level}\n"
             . "💰 " . number_format($account->price, 0, '.', ' ') . " so'm\n\n"
             . "Akkauntingiz endi marketplace da ko'rinmoqda.",
             [[['text' => "🛒 Marketplace'ga o'tish", 'url' => $url]]]
+        );
+    }
+
+    private function buildAccountText(Account $account, string $statusLine): string
+    {
+        $seller   = $account->user->username ? "@{$account->user->username}" : $account->user->first_name;
+        $transfer = $account->ready_for_transfer ? '✅ Ha' : '❌ Yo\'q';
+        $price    = number_format($account->price, 0, '.', ' ');
+
+        $lines = [
+            "<b>{$statusLine}</b>", '',
+            "💰 <b>Narx:</b> {$price} so'm",
+            "⚔️ <b>Qahramonlar:</b> {$account->heroes_count} ta",
+            "👗 <b>Skinlar:</b> {$account->skins_count} ta",
+            "🏆 <b>Kolleksiya:</b> {$account->collection_level}",
+            "🔄 <b>Transfer:</b> {$transfer}",
+        ];
+
+        if (!empty($account->description)) {
+            $lines[] = '';
+            $lines[] = "📝 {$account->description}";
+        }
+
+        $lines[] = '';
+        $lines[] = "👤 <b>Sotuvchi:</b> {$seller}";
+        $lines[] = "🆔 <b>ID:</b> #{$account->id}";
+
+        return implode("\n", $lines);
+    }
+
+    private function handleBuyRequest(int $accountId, string $callbackId, int $buyerTgId): void
+    {
+        $account = Account::with('user')->find($accountId);
+
+        if (!$account || $account->status !== 'active') {
+            $this->telegram->answerCallbackQuery($callbackId, '❗ Akkaunt sotuvda emas', true);
+            return;
+        }
+
+        if ($account->user->telegram_id === $buyerTgId) {
+            $this->telegram->answerCallbackQuery($callbackId, '❌ O\'z akkauntingizni sotib ololmaysiz!', true);
+            return;
+        }
+
+        $buyer = User::where('telegram_id', $buyerTgId)->first();
+        if (!$buyer) {
+            $this->telegram->answerCallbackQuery($callbackId, '❗ Avval botga /start yuboring', true);
+            return;
+        }
+
+        $existingDeal = Deal::where('account_id', $accountId)
+            ->whereIn('status', ['pending_admin', 'ongoing'])
+            ->exists();
+
+        if ($existingDeal) {
+            $this->telegram->answerCallbackQuery($callbackId, '⏳ Bu akkaunt uchun bitim jarayonda', true);
+            return;
+        }
+
+        $recentCancel = Deal::where('account_id', $accountId)
+            ->where('buyer_id', $buyer->id)
+            ->where('status', 'cancelled')
+            ->where('updated_at', '>=', now()->subHour())
+            ->exists();
+
+        if ($recentCancel) {
+            $this->telegram->answerCallbackQuery($callbackId, '⏳ 1 soat kuting — avvalgi so\'rovingiz bekor qilindi', true);
+            return;
+        }
+
+        $deal = Deal::create([
+            'account_id' => $account->id,
+            'buyer_id'   => $buyer->id,
+            'seller_id'  => $account->user->id,
+            'status'     => 'pending_admin',
+        ]);
+
+        $buyerName  = $buyer->username ? "@{$buyer->username}" : $buyer->first_name;
+        $sellerName = $account->user->username ? "@{$account->user->username}" : $account->user->first_name;
+        $price      = number_format($account->price, 0, '.', ' ');
+
+        $adminText = "🔔 <b>Yangi sotib olish so'rovi!</b>\n\n"
+                   . "💰 <b>Akkaunt #{$account->id}</b>\n"
+                   . "📦 Narx: <b>{$price} so'm</b>\n"
+                   . "🏆 {$account->collection_level}\n\n"
+                   . "🛒 <b>Xaridor:</b> {$buyerName}\n"
+                   . "👤 <b>Sotuvchi:</b> {$sellerName}\n\n"
+                   . "Bitim guruhini ochasizmi?";
+
+        $adminMsgId = $this->telegram->sendMessage(
+            $this->telegram->adminId,
+            $adminText,
+            [[
+                ['text' => '🤝 Guruh yaratish', 'callback_data' => "open_deal_{$deal->id}"],
+                ['text' => '❌ Rad etish',       'callback_data' => "cancel_deal_{$deal->id}"],
+            ]]
+        );
+
+        $deal->update(['admin_message_id' => $adminMsgId]);
+
+        $this->telegram->answerCallbackQuery($callbackId, '✅ So\'rovingiz adminga yuborildi!', true);
+
+        SendTelegramMessage::dispatch(
+            $buyerTgId,
+            "⏳ <b>So'rovingiz yuborildi!</b>\n\n"
+            . "Admin tez orada ko'rib chiqadi.\n"
+            . "Akkaunt: <b>#{$account->id}</b> — {$price} so'm"
         );
     }
 
@@ -386,8 +517,8 @@ class WebhookController extends Controller
         $price      = number_format($deal->account->price, 0, '.', ' ');
         $level      = $deal->account->collection_level;
 
-        // Xaridorga: relay ko'rsatmasi
-        $this->telegram->sendMessage(
+        // Xaridorga va sotuvchiga xabarlar queue orqali — biri sekin bo'lsa boshqasini to'sib qolmaydi
+        SendTelegramMessage::dispatch(
             $deal->buyer->telegram_id,
             "🛒 <b>Sotib olish tasdiqlandi!</b>\n\n"
             . "🎮 <b>{$level}</b>\n"
@@ -397,8 +528,7 @@ class WebhookController extends Controller
             . "⚠️ <b>To'lovni faqat admin tasdiqlashidan keyin o'tkazing!</b>"
         );
 
-        // Sotuvchiga: relay ko'rsatmasi
-        $this->telegram->sendMessage(
+        SendTelegramMessage::dispatch(
             $deal->seller->telegram_id,
             "💰 <b>Akkauntingizni sotib olmoqchi!</b>\n\n"
             . "🎮 <b>{$level}</b>\n"
@@ -408,7 +538,7 @@ class WebhookController extends Controller
             . "⚠️ <b>Akkaunt parolini faqat to'lov kelganidan keyin yuboring!</b>"
         );
 
-        // Admin xabarini yangilash
+        // Admin xabarini yangilash — bu sinxron qoladi (admin darhol ko'rishi kerak)
         $this->telegram->editMessageText(
             $adminChatId, $messageId,
             "🤝 <b>Bitim #{$dealId} boshlandi!</b>\n\n"
@@ -418,8 +548,8 @@ class WebhookController extends Controller
             . "👤 Sotuvchi: {$sellerName}\n\n"
             . "✉️ Xabarlar bot orqali relay qilinmoqda.",
             [[
-                ['text' => '✅ Yakunlash',    'callback_data' => "complete_deal_{$dealId}"],
-                ['text' => '❌ Bekor qilish', 'callback_data' => "cancel_deal_{$dealId}"],
+                ['text' => '✅ Savdo yakunlandi', 'callback_data' => "complete_deal_{$dealId}"],
+                ['text' => '❌ Bekor qilish',     'callback_data' => "cancel_deal_{$dealId}"],
             ]]
         );
     }
@@ -435,22 +565,19 @@ class WebhookController extends Controller
 
         $deal->update(['status' => 'cancelled']);
 
-        // Admin xabarini yangilash
         $this->telegram->editMessageText(
             $adminChatId, $messageId,
             "❌ <b>Bitim rad etildi.</b> Deal #{$dealId}",
             []
         );
 
-        // Xaridorga xabar
-        $this->telegram->sendMessage(
+        SendTelegramMessage::dispatch(
             $deal->buyer->telegram_id,
             "❌ <b>Sotib olish so'rovingiz bekor qilindi.</b>\n\n"
             . "Boshqa akkauntlarni ko'rish uchun marketplace ga kiring."
         );
 
-        // Sotuvchiga xabar
-        $this->telegram->sendMessage(
+        SendTelegramMessage::dispatch(
             $deal->seller->telegram_id,
             "ℹ️ <b>Bitim bekor qilindi.</b>\n\n"
             . "🏆 {$deal->account->collection_level}\n\n"
@@ -492,8 +619,7 @@ class WebhookController extends Controller
             []
         );
 
-        // Xaridorga tabrik
-        $this->telegram->sendMessage(
+        SendTelegramMessage::dispatch(
             $deal->buyer->telegram_id,
             "🎉 <b>Tabriklaymiz! Bitim yakunlandi.</b>\n\n"
             . "🎮 {$level}\n"
@@ -501,8 +627,7 @@ class WebhookController extends Controller
             . "Akkaunt muvaffaqiyatli o'tkazildi! Yaxshi o'yinlar! 🚀"
         );
 
-        // Sotuvchiga xabar
-        $this->telegram->sendMessage(
+        SendTelegramMessage::dispatch(
             $deal->seller->telegram_id,
             "💰 <b>Akkauntingiz sotildi!</b>\n\n"
             . "🎮 {$level}\n"

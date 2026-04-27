@@ -385,11 +385,18 @@
                             <p class="text-[15px] font-black g-gold leading-none" x-text="fmtPrice(acc.price)"></p>
                             <div class="flex gap-1.5">
                                 <button class="btn btn-view" style="padding:8px 10px;font-size:12px;flex:1">Ko'rish →</button>
-                                <template x-if="acc.seller_telegram_id != tgId">
+                                <template x-if="acc.seller_telegram_id != tgId && !acc.in_deal">
                                     <button @click.stop="openBuyModal(acc)"
                                             class="btn btn-gold"
                                             style="padding:8px 10px;font-size:12px;flex:1">
                                         🛒 Olish
+                                    </button>
+                                </template>
+                                <template x-if="acc.seller_telegram_id != tgId && acc.in_deal">
+                                    <button disabled
+                                            class="btn"
+                                            style="padding:8px 10px;font-size:12px;flex:1;opacity:.5;cursor:not-allowed">
+                                        🔒 Savdoda
                                     </button>
                                 </template>
                             </div>
@@ -1550,11 +1557,16 @@
         <div class="flex-shrink-0 px-4 py-3 border-t border-line"
              style="padding-bottom:calc(12px + env(safe-area-inset-bottom,0px))"
              x-show="detail.account">
-            <template x-if="detail.account && detail.account.seller_telegram_id != tgId">
+            <template x-if="detail.account && detail.account.seller_telegram_id != tgId && !detail.account.in_deal">
                 <button @click="openBuyModal(detail.account)"
                         class="btn btn-gold"
                         :disabled="buyModal.success && buyModal.account?.id === detail.account?.id">
                     💰 Sotib olish
+                </button>
+            </template>
+            <template x-if="detail.account && detail.account.seller_telegram_id != tgId && detail.account.in_deal">
+                <button disabled class="btn" style="opacity:.5;cursor:not-allowed">
+                    🔒 Savdoda
                 </button>
             </template>
             <template x-if="detail.account && detail.account.seller_telegram_id == tgId">
@@ -2032,6 +2044,12 @@ function app() {
                 this.buyModal.success = true;
             } catch(e) {
                 this.buyModal.error = e.response?.data?.error ?? 'Xatolik yuz berdi';
+                if (e.response?.status === 422) {
+                    const acc = this.accounts.find(a => a.id === this.buyModal.account?.id);
+                    if (acc) acc.in_deal = true;
+                    if (this.detail.account?.id === this.buyModal.account?.id) this.detail.account.in_deal = true;
+                    this.buyModal.open = false;
+                }
             } finally {
                 this.buyModal.loading = false;
             }

@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Services\TelegramService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class BuyController extends Controller
 {
@@ -32,20 +33,27 @@ class BuyController extends Controller
             return response()->json(['error' => 'O\'z akkauntingizni sotib ololmaysiz'], 422);
         }
 
-        $exists = Deal::where('account_id', $accountId)
-            ->whereIn('status', ['pending_admin', 'ongoing'])
-            ->exists();
+        try {
+            $deal = DB::transaction(function () use ($account, $buyer, $accountId): Deal {
+                $exists = Deal::where('account_id', $accountId)
+                    ->whereIn('status', ['pending_admin', 'ongoing'])
+                    ->lockForUpdate()
+                    ->exists();
 
-        if ($exists) {
-            return response()->json(['error' => 'Bu akkaunt uchun bitim allaqachon jarayonda'], 422);
+                if ($exists) {
+                    throw new \DomainException('Bu akkaunt hozirda savdoda');
+                }
+
+                return Deal::create([
+                    'account_id' => $account->id,
+                    'buyer_id'   => $buyer->id,
+                    'seller_id'  => $account->user->id,
+                    'status'     => 'pending_admin',
+                ]);
+            });
+        } catch (\DomainException $e) {
+            return response()->json(['error' => $e->getMessage()], 422);
         }
-
-        $deal = Deal::create([
-            'account_id' => $account->id,
-            'buyer_id'   => $buyer->id,
-            'seller_id'  => $account->user->id,
-            'status'     => 'pending_admin',
-        ]);
 
         $price      = number_format($account->price, 0, '.', ' ');
         $buyerName  = $buyer->username  ? "@{$buyer->username}"         : $buyer->first_name;
@@ -57,11 +65,11 @@ class BuyController extends Controller
                    . "🏆 {$account->collection_level}\n\n"
                    . "🛒 <b>Xaridor:</b> {$buyerName}\n"
                    . "👤 <b>Sotuvchi:</b> {$sellerName}\n\n"
-                   . "Bitim guruhini ochasizmi?";
+                   . "Savdoni boshlaymizmi?";
 
         $keyboard = [[
-            ['text' => '🤝 Guruh yaratish', 'callback_data' => "open_deal_{$deal->id}"],
-            ['text' => '❌ Rad etish',       'callback_data' => "cancel_deal_{$deal->id}"],
+            ['text' => '✅ Savdoni boshlash', 'callback_data' => "open_deal_{$deal->id}"],
+            ['text' => '❌ Rad etish',        'callback_data' => "cancel_deal_{$deal->id}"],
         ]];
 
         $adminMsgId = $this->telegram->sendMessage($this->telegram->adminId, $adminText, $keyboard);
