@@ -564,24 +564,34 @@ class WebhookController extends Controller
         }
 
         $deal->update(['status' => 'cancelled']);
+        $deal->account->update(['status' => 'active']);
+
+        $price = number_format($deal->account->price, 0, '.', ' ');
+        $level = $deal->account->collection_level;
 
         $this->telegram->editMessageText(
             $adminChatId, $messageId,
-            "❌ <b>Bitim rad etildi.</b> Deal #{$dealId}",
+            "❌ <b>Bitim #{$dealId} bekor qilindi</b>\n\n"
+            . "🎮 {$level}\n"
+            . "💰 {$price} so'm\n\n"
+            . "Akkaunt qayta sotuvga qo'yildi.",
             []
         );
 
         SendTelegramMessage::dispatch(
             $deal->buyer->telegram_id,
-            "❌ <b>Sotib olish so'rovingiz bekor qilindi.</b>\n\n"
-            . "Boshqa akkauntlarni ko'rish uchun marketplace ga kiring."
+            "❌ <b>Bitim bekor qilindi.</b>\n\n"
+            . "🎮 {$level}\n"
+            . "💰 {$price} so'm\n\n"
+            . "Pul mablag'i yetarli bo'lganda qaytadan urinib ko'rishingiz mumkin."
         );
 
         SendTelegramMessage::dispatch(
             $deal->seller->telegram_id,
             "ℹ️ <b>Bitim bekor qilindi.</b>\n\n"
-            . "🏆 {$deal->account->collection_level}\n\n"
-            . "Akkauntingiz yana sotuvda davom etadi."
+            . "🎮 {$level}\n"
+            . "💰 {$price} so'm\n\n"
+            . "Akkauntingiz yana sotuvga qo'yildi — boshqa xaridorlar ko'ra oladi. ✅"
         );
     }
 
