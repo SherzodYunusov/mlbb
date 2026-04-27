@@ -187,7 +187,6 @@
 
               <div class="flex-1 min-w-0">
                 <div class="flex items-center gap-2 flex-wrap">
-                  <span class="text-sm font-bold text-white" x-text="req.poster_name"></span>
                   <span class="badge-active">✅ Faol</span>
                 </div>
                 <p class="text-[11px] mt-0.5" style="color:var(--muted)" x-text="timeAgo(req.created_at)"></p>
@@ -215,12 +214,6 @@
                 <span class="chip" style="background:rgba(16,185,129,.1);border-color:rgba(16,185,129,.25);color:#34d399">
                   💰 <span x-text="budgetText(req)"></span>
                 </span>
-              </template>
-              <template x-if="req.contact">
-                <a :href="`https://t.me/${req.contact}`" target="_blank"
-                   class="chip" style="background:rgba(59,130,246,.12);border-color:rgba(59,130,246,.25);color:#60a5fa;text-decoration:none">
-                  ✈️ @<span x-text="req.contact"></span>
-                </a>
               </template>
             </div>
 
@@ -252,8 +245,20 @@
                   <div class="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0"
                        :style="`background:${c.is_poster ? 'rgba(124,58,237,.4)' : 'rgba(59,130,246,.3)'};color:#fff`"
                        x-text="c.sender.initials"></div>
-                  <span class="text-xs font-semibold" :style="`color:${c.is_poster ? '#a78bfa' : '#93c5fd'}`"
-                        x-text="c.sender.name + (c.is_poster ? ' 👤' : '')"></span>
+
+                  {{-- Nom → web profil (Telegram emas) --}}
+                  <template x-if="c.sender.tg_id && !c.is_poster">
+                    <a :href="`/profile/${c.sender.tg_id}?viewer_id=${tgId}`"
+                       target="_blank"
+                       class="text-xs font-semibold"
+                       :style="`color:#93c5fd;text-decoration:none`"
+                       x-text="c.sender.name"></a>
+                  </template>
+                  <template x-if="c.is_poster">
+                    <span class="text-xs font-semibold" style="color:#a78bfa"
+                          x-text="c.sender.name + ' 👤'"></span>
+                  </template>
+
                   <span class="text-[10px] ml-auto" style="color:var(--muted)" x-text="timeAgo(c.created_at)"></span>
                   <template x-if="c.can_delete">
                     <button @click="deleteComment(req, c.id)"
@@ -262,19 +267,6 @@
                   </template>
                 </div>
                 <p class="text-sm leading-relaxed" style="color:var(--ink)" x-text="c.message"></p>
-
-                {{-- Profile link if has username --}}
-                <template x-if="c.sender.tg_id">
-                  <a :href="`/profile/${c.sender.tg_id}?viewer_id=${tgId}`"
-                     target="_blank"
-                     class="inline-flex items-center gap-1 mt-1.5 text-[10px] font-semibold"
-                     style="color:rgba(167,139,250,.6);text-decoration:none">
-                    <svg width="10" height="10" fill="currentColor" viewBox="0 0 20 20">
-                      <path fill-rule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clip-rule="evenodd"/>
-                    </svg>
-                    Profilni ko'rish
-                  </a>
-                </template>
               </div>
             </template>
 
@@ -338,17 +330,17 @@
       <div class="bnav-dot"></div>
     </a>
 
-    <button @click="openForm()"
-            class="bnav-btn"
-            style="color:#a78bfa">
+    <a href="/webapp?tab=sell"
+       class="bnav-btn"
+       style="color:#a78bfa">
       <div class="w-8 h-8 rounded-2xl flex items-center justify-center"
            style="background:linear-gradient(135deg,#7c3aed,#6d28d9);box-shadow:0 4px 14px rgba(124,58,237,.45)">
         <svg width="14" height="14" fill="none" stroke="white" stroke-width="2.5" viewBox="0 0 24 24">
           <path d="M12 5v14M5 12h14"/>
         </svg>
       </div>
-      So'rov
-    </button>
+      E'lon
+    </a>
 
     <a :href="tgId ? `/profile/${tgId}?viewer_id=${tgId}` : '/webapp'" class="bnav-btn">
       <svg width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
