@@ -331,15 +331,14 @@
     </a>
 
     <a href="/webapp?tab=sell"
-       class="bnav-btn"
-       style="color:#a78bfa">
+       class="bnav-btn sell-pill-btn">
       <div class="w-8 h-8 rounded-2xl flex items-center justify-center"
-           style="background:linear-gradient(135deg,#7c3aed,#6d28d9);box-shadow:0 4px 14px rgba(124,58,237,.45)">
-        <svg width="14" height="14" fill="none" stroke="white" stroke-width="2.5" viewBox="0 0 24 24">
-          <path d="M12 5v14M5 12h14"/>
+           style="background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.1)">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/>
         </svg>
       </div>
-      E'lon
+      <span>Sotish</span>
     </a>
 
     <a :href="tgId ? `/profile/${tgId}?viewer_id=${tgId}` : '/webapp'" class="bnav-btn">
