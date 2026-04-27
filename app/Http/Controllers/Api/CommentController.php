@@ -170,6 +170,7 @@ class CommentController extends Controller
             'sender'     => [
                 'name'     => $name,
                 'initials' => mb_strtoupper(mb_substr($c->sender->first_name ?? 'U', 0, 1)),
+                'tg_id'    => $c->sender->telegram_id,
             ],
             'replies'    => $c->relationLoaded('replies')
                 ? $c->replies->map(fn($r) => $this->format($r, $viewer, $sellerId))->values()

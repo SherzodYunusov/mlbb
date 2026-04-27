@@ -1409,7 +1409,16 @@
                                      x-text="c.sender.initials"></div>
                                 <div class="flex-1 min-w-0">
                                     <div class="flex items-center gap-1.5 flex-wrap">
-                                        <span class="text-xs font-semibold text-ink" x-text="c.sender.name"></span>
+                                        <template x-if="c.sender.tg_id && !c.is_seller">
+                                            <a :href="`/profile/${c.sender.tg_id}?viewer_id=${tgId}`"
+                                               target="_blank"
+                                               class="text-xs font-semibold text-ink"
+                                               style="text-decoration:none;color:#93c5fd"
+                                               x-text="c.sender.name"></a>
+                                        </template>
+                                        <template x-if="c.is_seller || !c.sender.tg_id">
+                                            <span class="text-xs font-semibold text-ink" x-text="c.sender.name"></span>
+                                        </template>
                                         <span x-show="c.is_seller"
                                               class="text-[10px] font-bold px-1.5 py-0.5 rounded-full"
                                               style="background:rgba(240,180,41,0.15);color:#f0b429">Muallif</span>
@@ -1461,7 +1470,16 @@
                                              x-text="r.sender.initials"></div>
                                         <div class="flex-1 min-w-0">
                                             <div class="flex items-center gap-1.5 flex-wrap">
-                                                <span class="text-xs font-semibold text-ink" x-text="r.sender.name"></span>
+                                                <template x-if="r.sender.tg_id && !r.is_seller">
+                                                    <a :href="`/profile/${r.sender.tg_id}?viewer_id=${tgId}`"
+                                                       target="_blank"
+                                                       class="text-xs font-semibold"
+                                                       style="text-decoration:none;color:#93c5fd"
+                                                       x-text="r.sender.name"></a>
+                                                </template>
+                                                <template x-if="r.is_seller || !r.sender.tg_id">
+                                                    <span class="text-xs font-semibold text-ink" x-text="r.sender.name"></span>
+                                                </template>
                                                 <span x-show="r.is_seller"
                                                       class="text-[10px] font-bold px-1.5 py-0.5 rounded-full"
                                                       style="background:rgba(240,180,41,0.15);color:#f0b429">Muallif</span>
