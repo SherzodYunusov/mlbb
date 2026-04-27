@@ -299,14 +299,14 @@ class WebhookController extends Controller
         // ── Checkin: hali ham sotuvda ──
         if (str_starts_with($data, 'checkin_yes_')) {
             $accountId = (int) substr($data, 12);
-            $this->checkinConfirm($accountId, $chatId, $messageId);
+            $this->checkinConfirm($accountId, $from['id'], $chatId, $messageId);
             return;
         }
 
         // ── Checkin: sotib yubordim → arxivlash ──
         if (str_starts_with($data, 'checkin_sold_')) {
             $accountId = (int) substr($data, 13);
-            $this->checkinArchive($accountId, $chatId, $messageId);
+            $this->checkinArchive($accountId, $from['id'], $chatId, $messageId);
             return;
         }
 
@@ -604,10 +604,9 @@ class WebhookController extends Controller
             []
         );
 
-        // Sotuvchiga xabar (foydalanuvchi o'chirilgan bo'lishi mumkin)
         if (!$account->user) return;
 
-        $this->telegram->sendMessage(
+        SendTelegramMessage::dispatch(
             $account->user->telegram_id,
             "❌ <b>Akkauntingiz rad etildi.</b>\n\n"
             . "🏆 {$account->collection_level}\n\n"
@@ -625,6 +624,11 @@ class WebhookController extends Controller
 
         if (!$deal) {
             $this->telegram->editMessageText($adminChatId, $messageId, "❌ Bitim topilmadi (#$dealId)");
+            return;
+        }
+
+        if ($deal->status !== 'pending_admin') {
+            $this->telegram->editMessageText($adminChatId, $messageId, "ℹ️ Bitim allaqachon boshqa holatda: {$deal->status}");
             return;
         }
 
@@ -682,6 +686,16 @@ class WebhookController extends Controller
             return;
         }
 
+        if ($deal->status === 'completed') {
+            $this->telegram->editMessageText($adminChatId, $messageId, "⚠️ Yakunlangan bitimni bekor qilib bo'lmaydi (#$dealId)");
+            return;
+        }
+
+        if ($deal->status === 'cancelled') {
+            $this->telegram->editMessageText($adminChatId, $messageId, "ℹ️ Bu bitim allaqachon bekor qilingan (#$dealId)");
+            return;
+        }
+
         $deal->update(['status' => 'cancelled']);
         $deal->account->update(['status' => 'active']);
 
@@ -729,6 +743,11 @@ class WebhookController extends Controller
             return;
         }
 
+        if ($deal->status === 'cancelled') {
+            $this->telegram->editMessageText($adminChatId, $messageId, "⚠️ Bekor qilingan bitimni yakunlab bo'lmaydi (#$dealId)");
+            return;
+        }
+
         $deal->update(['status' => 'completed']);
         $deal->account->update(['status' => 'sold']);
 
@@ -770,10 +789,12 @@ class WebhookController extends Controller
     //  CHECKIN
     // ──────────────────────────────────────────────
 
-    private function checkinConfirm(int $accountId, int|string $chatId, int $messageId): void
+    private function checkinConfirm(int $accountId, int $fromTgId, int|string $chatId, int $messageId): void
     {
-        $account = Account::find($accountId);
+        $account = Account::with('user')->find($accountId);
         if (!$account) return;
+
+        if ($account->user->telegram_id !== $fromTgId) return;
 
         $account->update([
             'last_confirmed_at' => now(),
@@ -789,10 +810,12 @@ class WebhookController extends Controller
         );
     }
 
-    private function checkinArchive(int $accountId, int|string $chatId, int $messageId): void
+    private function checkinArchive(int $accountId, int $fromTgId, int|string $chatId, int $messageId): void
     {
-        $account = Account::find($accountId);
+        $account = Account::with('user')->find($accountId);
         if (!$account) return;
+
+        if ($account->user->telegram_id !== $fromTgId) return;
 
         $account->update(['status' => 'archived']);
 
@@ -835,7 +858,7 @@ class WebhookController extends Controller
         $user = \Illuminate\Support\Facades\DB::table('users')->where('id', $req->user_id)->first();
         if ($user) {
             $reqUrl = config('app.url') . '/webapp/requests';
-            $this->telegram->sendMessage(
+            SendTelegramMessage::dispatch(
                 $user->telegram_id,
                 "✅ <b>Buyurtmangiz tasdiqlandi!</b>\n\n"
                 . "📋 Sizning akkaunt so'rovingiz e'lonlar taxtasiga qo'yildi.\n"
@@ -865,7 +888,7 @@ class WebhookController extends Controller
 
         $user = \Illuminate\Support\Facades\DB::table('users')->where('id', $req->user_id)->first();
         if ($user) {
-            $this->telegram->sendMessage(
+            SendTelegramMessage::dispatch(
                 $user->telegram_id,
                 "❌ <b>Afsuski, buyurtmangiz tasdiqlanmadi.</b>\n\n"
                 . "Qayta ko'rib chiqib, yangi buyurtma berishingiz mumkin."
