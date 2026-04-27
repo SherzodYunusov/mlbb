@@ -19,6 +19,12 @@ class DealTimeoutCommand extends Command
             ->get();
 
         foreach ($expired as $deal) {
+            if (!$deal->account || !$deal->buyer || !$deal->seller) {
+                $this->warn("⚠️ Deal #{$deal->id}: munosabat topilmadi, o'tkazildi");
+                $deal->update(['status' => 'cancelled']);
+                continue;
+            }
+
             $deal->update(['status' => 'cancelled']);
             $deal->account->update(['status' => 'active']);
 

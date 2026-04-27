@@ -172,6 +172,12 @@ class WebhookController extends Controller
 
     private function handleCallback(array $callback): void
     {
+        // Eski xabarlarda 'message' bo'lmasligi mumkin
+        if (!isset($callback['message'])) {
+            $this->telegram->answerCallbackQuery($callback['id'] ?? '');
+            return;
+        }
+
         $chatId      = $callback['message']['chat']['id'];
         $messageId   = $callback['message']['message_id'];
         $from        = $callback['from'];
@@ -354,13 +360,14 @@ class WebhookController extends Controller
                 $this->buildAccountText($account, '✅ TASDIQLANDI — Sotuvda'),
                 [[['text' => '💰 Sotib olish', 'callback_data' => "buy_{$account->id}"]]]
             );
-        } else {
-            $this->telegram->editMessageText(
-                $adminChatId, $messageId,
-                "✅ <b>Tasdiqlandi!</b> Akkaunt #{$accountId} sotuvga qo'yildi.",
-                []
-            );
         }
+
+        // Admin xabarini har doim yangilash (tugmalarni olib tashlash)
+        $this->telegram->editMessageText(
+            $adminChatId, $messageId,
+            "✅ <b>Tasdiqlandi!</b> Akkaunt #{$accountId} sotuvga qo'yildi.",
+            []
+        );
 
         $seller = $account->user;
         if (!$seller) return;
@@ -747,7 +754,10 @@ class WebhookController extends Controller
     {
         $deal = Deal::with(['account', 'buyer', 'seller'])->find($dealId);
 
-        if (!$deal) return;
+        if (!$deal) {
+            $this->telegram->editMessageText($adminChatId, $messageId, "❌ Bitim topilmadi (#$dealId)");
+            return;
+        }
 
         if ($deal->status === 'completed') {
             $this->telegram->editMessageText($adminChatId, $messageId, "✅ Bu bitim allaqachon yakunlangan! (#$dealId)");
@@ -866,9 +876,10 @@ class WebhookController extends Controller
             []
         );
 
-        $user = \Illuminate\Support\Facades\DB::table('users')->where('id', $req->user_id)->first();
+        $user = User::find($req->user_id);
         if ($user) {
-            $reqUrl = config('app.url') . '/webapp/requests';
+            $token  = $this->makeToken($user);
+            $reqUrl = config('app.url') . '/webapp/requests?token=' . $token;
             SendTelegramMessage::dispatch(
                 $user->telegram_id,
                 "✅ <b>Buyurtmangiz tasdiqlandi!</b>\n\n"
@@ -886,6 +897,16 @@ class WebhookController extends Controller
 
         if (!$req) {
             $this->telegram->editMessageText($adminChatId, $messageId, "❌ So'rov topilmadi (#$reqId)");
+            return;
+        }
+
+        if ($req->status === 'closed') {
+            $this->telegram->editMessageText($adminChatId, $messageId, "ℹ️ Bu so'rov allaqachon rad etilgan (#$reqId)");
+            return;
+        }
+
+        if ($req->status === 'active') {
+            $this->telegram->editMessageText($adminChatId, $messageId, "⚠️ Tasdiqlangan so'rovni rad etib bo'lmaydi (#$reqId)");
             return;
         }
 
