@@ -69,14 +69,25 @@ class WebhookController extends Controller
         }
 
         // Faol bitim relay — xaridor ↔ sotuvchi xabarlari bot orqali
-        $deal = Deal::where('status', 'ongoing')
+        $deal = Deal::whereIn('status', ['ongoing', 'pending_admin'])
             ->where(function ($q) use ($user) {
                 $q->where('buyer_id', $user->id)->orWhere('seller_id', $user->id);
             })
-            ->with(['buyer', 'seller'])
+            ->with(['buyer', 'seller', 'account'])
             ->first();
 
-        if ($deal) {
+        if ($deal && $deal->status === 'pending_admin') {
+            $level = $deal->account->collection_level ?? '';
+            $this->telegram->sendMessage(
+                $chat['id'],
+                "⏳ <b>So'rovingiz ko'rib chiqilmoqda.</b>\n\n"
+                . ($level ? "🎮 {$level}\n\n" : '')
+                . "Admin tez orada javob beradi. Biroz kuting."
+            );
+            return;
+        }
+
+        if ($deal && $deal->status === 'ongoing') {
             $isBuyer = $deal->buyer_id === $user->id;
             $role    = $isBuyer ? '🛒 Xaridor' : '👤 Sotuvchi';
             $other   = $isBuyer ? $deal->seller : $deal->buyer;
@@ -734,7 +745,7 @@ class WebhookController extends Controller
             "❌ <b>Bitim bekor qilindi.</b>\n\n"
             . "🎮 {$level}\n"
             . "💰 {$price} so'm\n\n"
-            . "Pul mablag'i yetarli bo'lganda qaytadan urinib ko'rishingiz mumkin."
+            . "Boshqa akkauntlarni ko'rish uchun marketplace ga kiring."
         );
 
         SendTelegramMessage::dispatch(
@@ -776,6 +787,16 @@ class WebhookController extends Controller
         $sellerName = $deal->seller->username ? "@{$deal->seller->username}" : $deal->seller->first_name;
         $price      = number_format($deal->account->price, 0, '.', ' ');
         $level      = $deal->account->collection_level;
+
+        // Kanal xabaridan "Sotib olish" tugmasini olib tashlash
+        if ($deal->account->channel_message_id) {
+            $this->telegram->editMessageText(
+                $this->telegram->adminChannelId,
+                (int) $deal->account->channel_message_id,
+                $this->buildAccountText($deal->account, '✅ SOTILDI'),
+                []
+            );
+        }
 
         // Admin xabarini yakunlandi deb yangilash
         $this->telegram->editMessageText(
@@ -837,6 +858,21 @@ class WebhookController extends Controller
         if (!$account) return;
 
         if ($account->user->telegram_id !== $fromTgId) return;
+
+        $hasActiveDeal = Deal::where('account_id', $account->id)
+            ->whereIn('status', ['pending_admin', 'ongoing'])
+            ->exists();
+
+        if ($hasActiveDeal) {
+            $this->telegram->editMessageText(
+                $chatId, $messageId,
+                "⚠️ <b>Arxivlab bo'lmaydi</b>\n\n"
+                . "🎮 <b>{$account->collection_level}</b>\n\n"
+                . "Bu akkaunt uchun hozir faol bitim bor. Avval bitim yakunlangandan so'ng arxivlang.",
+                []
+            );
+            return;
+        }
 
         $account->update(['status' => 'archived']);
 
