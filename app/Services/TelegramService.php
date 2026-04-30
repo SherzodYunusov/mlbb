@@ -11,6 +11,7 @@ class TelegramService
     private string $baseUrl;
     public string|int $adminChannelId;
     public int $adminId;
+    public string $adminUsername;
     public string|int|null $dealsGroupId;
 
     public function __construct()
@@ -18,8 +19,9 @@ class TelegramService
         $token = config('services.telegram.bot_token');
         $this->baseUrl      = "https://api.telegram.org/bot{$token}";
         $this->adminChannelId = config('services.telegram.admin_channel_id');
-        $this->adminId      = (int) config('services.telegram.admin_id');
-        $this->dealsGroupId = config('services.telegram.deals_group_id') ?: null;
+        $this->adminId        = (int) config('services.telegram.admin_id');
+        $this->adminUsername  = config('services.telegram.admin_username', '@admin');
+        $this->dealsGroupId   = config('services.telegram.deals_group_id') ?: null;
     }
 
     // ══════════════════════════════════════════════

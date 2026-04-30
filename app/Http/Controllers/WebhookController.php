@@ -68,15 +68,111 @@ class WebhookController extends Controller
             return;
         }
 
-        // Faol bitim relay — xaridor ↔ sotuvchi xabarlari bot orqali
-        $deal = Deal::whereIn('status', ['ongoing', 'pending_admin'])
+        // Admin guruh linkini yuborsa — eng oxirgi ongoing deal ga jo'natish
+        if ($from['id'] === $this->telegram->adminId && str_contains($text, 't.me/+')) {
+            preg_match('/(https?:\/\/t\.me\/\+\S+)/', $text, $m);
+            $inviteLink = $m[1] ?? trim($text);
+
+            $ongoingDeals = Deal::with(['buyer', 'seller', 'account'])
+                ->where('status', 'ongoing')
+                ->latest()
+                ->get();
+
+            if ($ongoingDeals->isEmpty()) {
+                $this->telegram->sendMessage($chat['id'], "❌ Faol bitim topilmadi.");
+                return;
+            }
+
+            // Bir nechta ongoing deal bo'lsa — admindan tanlashni so'raymiz
+            if ($ongoingDeals->count() > 1) {
+                $list = $ongoingDeals->map(fn($d) =>
+                    "#{$d->id} — " . ($d->account->collection_level ?? '?') .
+                    " | 🛒 " . ($d->buyer->username ? "@{$d->buyer->username}" : $d->buyer->first_name)
+                )->join("\n");
+
+                $this->telegram->sendMessage(
+                    $chat['id'],
+                    "⚠️ Bir nechta faol bitim bor. Qaysi biri uchun?\n\n{$list}\n\nLinkni qayta yuboring va oldiga #ID qo'shing:\n<code>#3 {$inviteLink}</code>"
+                );
+                return;
+            }
+
+            $deal  = $ongoingDeals->first();
+            $level = $deal->account->collection_level ?? '';
+
+            SendTelegramMessage::dispatch(
+                $deal->buyer->telegram_id,
+                "🔗 <b>Guruh linki tayyor!</b>\n\n"
+                . "🎮 {$level}\n\n"
+                . "Quyidagi tugma orqali guruhga qo'shiling:",
+                [[['text' => '💬 Guruhga kirish', 'url' => $inviteLink]]]
+            );
+
+            SendTelegramMessage::dispatch(
+                $deal->seller->telegram_id,
+                "🔗 <b>Guruh linki tayyor!</b>\n\n"
+                . "🎮 {$level}\n\n"
+                . "Quyidagi tugma orqali guruhga qo'shiling:",
+                [[['text' => '💬 Guruhga kirish', 'url' => $inviteLink]]]
+            );
+
+            $buyerName  = $deal->buyer->username  ? "@{$deal->buyer->username}"  : $deal->buyer->first_name;
+            $sellerName = $deal->seller->username ? "@{$deal->seller->username}" : $deal->seller->first_name;
+
+            $this->telegram->sendMessage(
+                $chat['id'],
+                "✅ Link yuborildi — Deal #{$deal->id}\n🛒 {$buyerName}\n👤 {$sellerName}"
+            );
+            return;
+        }
+
+        // Admin #ID link formatida yuborganda
+        if ($from['id'] === $this->telegram->adminId && preg_match('/^#(\d+)\s+(https?:\/\/t\.me\/\+\S+)/', trim($text), $m)) {
+            $dealId     = (int) $m[1];
+            $inviteLink = $m[2];
+
+            $deal = Deal::with(['buyer', 'seller', 'account'])
+                ->where('id', $dealId)
+                ->where('status', 'ongoing')
+                ->first();
+
+            if (!$deal) {
+                $this->telegram->sendMessage($chat['id'], "❌ Deal #{$dealId} topilmadi yoki faol emas.");
+                return;
+            }
+
+            $level      = $deal->account->collection_level ?? '';
+            $buyerName  = $deal->buyer->username  ? "@{$deal->buyer->username}"  : $deal->buyer->first_name;
+            $sellerName = $deal->seller->username ? "@{$deal->seller->username}" : $deal->seller->first_name;
+
+            SendTelegramMessage::dispatch(
+                $deal->buyer->telegram_id,
+                "🔗 <b>Guruh linki tayyor!</b>\n\n🎮 {$level}\n\nGuruhga qo'shiling:",
+                [[['text' => '💬 Guruhga kirish', 'url' => $inviteLink]]]
+            );
+
+            SendTelegramMessage::dispatch(
+                $deal->seller->telegram_id,
+                "🔗 <b>Guruh linki tayyor!</b>\n\n🎮 {$level}\n\nGuruhga qo'shiling:",
+                [[['text' => '💬 Guruhga kirish', 'url' => $inviteLink]]]
+            );
+
+            $this->telegram->sendMessage(
+                $chat['id'],
+                "✅ Link yuborildi — Deal #{$deal->id}\n🛒 {$buyerName}\n👤 {$sellerName}"
+            );
+            return;
+        }
+
+        // Faol bitim borligida foydalanuvchiga "kuting" xabari
+        $deal = Deal::where('status', 'pending_admin')
             ->where(function ($q) use ($user) {
                 $q->where('buyer_id', $user->id)->orWhere('seller_id', $user->id);
             })
-            ->with(['buyer', 'seller', 'account'])
+            ->with('account')
             ->first();
 
-        if ($deal && $deal->status === 'pending_admin') {
+        if ($deal) {
             $level = $deal->account->collection_level ?? '';
             $this->telegram->sendMessage(
                 $chat['id'],
@@ -84,24 +180,6 @@ class WebhookController extends Controller
                 . ($level ? "🎮 {$level}\n\n" : '')
                 . "Admin tez orada javob beradi. Biroz kuting."
             );
-            return;
-        }
-
-        if ($deal && $deal->status === 'ongoing') {
-            $isBuyer = $deal->buyer_id === $user->id;
-            $role    = $isBuyer ? '🛒 Xaridor' : '👤 Sotuvchi';
-            $other   = $isBuyer ? $deal->seller : $deal->buyer;
-
-            if ($text) {
-                $this->telegram->sendMessage(
-                    $other->telegram_id,
-                    "💬 <b>{$role}:</b>\n" . htmlspecialchars($text, ENT_QUOTES, 'UTF-8')
-                );
-            } else {
-                // Rasm, fayl, ovoz — copyMessage bilan relay
-                $this->telegram->sendMessage($other->telegram_id, "💬 <b>{$role}:</b> 👇");
-                $this->telegram->copyMessage($other->telegram_id, $chat['id'], $message['message_id']);
-            }
             return;
         }
 
@@ -668,79 +746,35 @@ class WebhookController extends Controller
         $price      = number_format($deal->account->price, 0, '.', ' ');
         $level      = $deal->account->collection_level;
 
-        // Deals guruhida forum topic yaratish
-        $topicId   = null;
-        $groupLink = null;
+        // Xaridorga: admin ruxsat berdi, online bo'ling
+        SendTelegramMessage::dispatch(
+            $deal->buyer->telegram_id,
+            "✅ <b>Admin savdoga ruxsat berdi!</b>\n\n"
+            . "🎮 <b>{$level}</b>\n"
+            . "💰 {$price} so'm\n\n"
+            . "⏳ Iltimos, <b>1 soat davomida online bo'lib turing.</b>\n"
+            . "Tez orada guruh linki yuboriladi."
+        );
 
-        if ($this->telegram->dealsGroupId) {
-            $topicName = "Deal #{$dealId} — {$level}";
-            $topicId   = $this->telegram->createForumTopic($this->telegram->dealsGroupId, $topicName);
+        // Sotuvchiga: xaridor topildi, kutib turing
+        SendTelegramMessage::dispatch(
+            $deal->seller->telegram_id,
+            "🛒 <b>Xaridor topildi!</b>\n\n"
+            . "🎮 <b>{$level}</b>\n"
+            . "💰 {$price} so'm\n\n"
+            . "⏳ Admin tez orada guruh linki yuboradi. Online bo'lib turing."
+        );
 
-            if ($topicId) {
-                // Xaridor uchun alohida invite link
-                $buyerLink  = $this->telegram->createInviteLink($this->telegram->dealsGroupId, "Xaridor #{$dealId}");
-                // Sotuvchi uchun alohida invite link
-                $sellerLink = $this->telegram->createInviteLink($this->telegram->dealsGroupId, "Sotuvchi #{$dealId}");
-
-                $deal->update(['topic_id' => $topicId]);
-
-                SendTelegramMessage::dispatch(
-                    $deal->buyer->telegram_id,
-                    "🛒 <b>Sotib olish tasdiqlandi!</b>\n\n"
-                    . "🎮 <b>{$level}</b>\n"
-                    . "💰 {$price} so'm\n\n"
-                    . "👇 Quyidagi tugma orqali guruhga qo'shiling va sotuvchi bilan muloqot qiling:\n\n"
-                    . "⚠️ <b>To'lovni faqat admin tasdiqlashidan keyin o'tkazing!</b>",
-                    $buyerLink ? [[['text' => '💬 Guruhga kirish', 'url' => $buyerLink]]] : []
-                );
-
-                SendTelegramMessage::dispatch(
-                    $deal->seller->telegram_id,
-                    "💰 <b>Akkauntingizni sotib olmoqchi!</b>\n\n"
-                    . "🎮 <b>{$level}</b>\n"
-                    . "🛒 Xaridor: {$buyerName}\n\n"
-                    . "👇 Quyidagi tugma orqali guruhga qo'shiling:\n\n"
-                    . "⚠️ <b>Akkaunt parolini faqat to'lov kelganidan keyin yuboring!</b>",
-                    $sellerLink ? [[['text' => '💬 Guruhga kirish', 'url' => $sellerLink]]] : []
-                );
-
-                $groupLink = "https://t.me/c/" . ltrim((string) $this->telegram->dealsGroupId, '-100') . "/{$topicId}";
-            }
-        }
-
-        // Agar deals guruhi yo'q bo'lsa — bot relay orqali ishlaydi
-        if (!$topicId) {
-            SendTelegramMessage::dispatch(
-                $deal->buyer->telegram_id,
-                "🛒 <b>Sotib olish tasdiqlandi!</b>\n\n"
-                . "🎮 <b>{$level}</b>\n"
-                . "💰 {$price} so'm\n\n"
-                . "✉️ Endi <b>shu botga</b> xabar yozing — sotuvchiga yetkaziladi.\n\n"
-                . "⚠️ <b>To'lovni faqat admin tasdiqlashidan keyin o'tkazing!</b>"
-            );
-
-            SendTelegramMessage::dispatch(
-                $deal->seller->telegram_id,
-                "💰 <b>Akkauntingizni sotib olmoqchi!</b>\n\n"
-                . "🎮 <b>{$level}</b>\n"
-                . "🛒 Xaridor: {$buyerName}\n\n"
-                . "✉️ Endi <b>shu botga</b> xabar yozing — xaridorga yetkaziladi.\n\n"
-                . "⚠️ <b>Akkaunt parolini faqat to'lov kelganidan keyin yuboring!</b>",
-                [[['text' => '❌ Bitimdan chiqish', 'callback_data' => "seller_cancel_{$deal->id}"]]]
-            );
-        }
-
-        // Admin xabarini yangilash
-        $adminText = "🤝 <b>Bitim #{$dealId} boshlandi!</b>\n\n"
+        // Admin xabarini yangilash — guruh linkini botga yuborish uchun ko'rsatma
+        $this->telegram->editMessageText(
+            $adminChatId, $messageId,
+            "✅ <b>Savdo #{$dealId} tasdiqlandi!</b>\n\n"
             . "🎮 {$level}\n"
             . "💰 {$price} so'm\n"
             . "🛒 Xaridor: {$buyerName}\n"
             . "👤 Sotuvchi: {$sellerName}\n\n"
-            . ($groupLink ? "💬 <a href='{$groupLink}'>Guruhni ochish</a>" : "✉️ Bot relay orqali");
-
-        $this->telegram->editMessageText(
-            $adminChatId, $messageId,
-            $adminText,
+            . "👇 Endi private guruh yarating va linkini <b>shu botga</b> yuboring:\n"
+            . "<code>https://t.me/+xxxxx #" . $dealId . "</code>",
             [[
                 ['text' => '✅ Savdo yakunlandi', 'callback_data' => "complete_deal_{$dealId}"],
                 ['text' => '❌ Bekor qilish',     'callback_data' => "cancel_deal_{$dealId}"],
@@ -782,12 +816,14 @@ class WebhookController extends Controller
             []
         );
 
+        $adminUsername = $this->telegram->adminUsername;
+
         SendTelegramMessage::dispatch(
             $deal->buyer->telegram_id,
-            "❌ <b>Bitim bekor qilindi.</b>\n\n"
+            "❌ <b>Savdo bekor qilindi.</b>\n\n"
             . "🎮 {$level}\n"
             . "💰 {$price} so'm\n\n"
-            . "Boshqa akkauntlarni ko'rish uchun marketplace ga kiring."
+            . "Savollar bo'lsa admin bilan bog'laning: {$adminUsername}"
         );
 
         SendTelegramMessage::dispatch(
@@ -795,7 +831,7 @@ class WebhookController extends Controller
             "ℹ️ <b>Bitim bekor qilindi.</b>\n\n"
             . "🎮 {$level}\n"
             . "💰 {$price} so'm\n\n"
-            . "Akkauntingiz yana sotuvga qo'yildi — boshqa xaridorlar ko'ra oladi. ✅"
+            . "Akkauntingiz yana sotuvga qo'yildi. ✅"
         );
     }
 
