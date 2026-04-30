@@ -668,37 +668,79 @@ class WebhookController extends Controller
         $price      = number_format($deal->account->price, 0, '.', ' ');
         $level      = $deal->account->collection_level;
 
-        // Xaridorga va sotuvchiga xabarlar queue orqali — biri sekin bo'lsa boshqasini to'sib qolmaydi
-        SendTelegramMessage::dispatch(
-            $deal->buyer->telegram_id,
-            "🛒 <b>Sotib olish tasdiqlandi!</b>\n\n"
-            . "🎮 <b>{$level}</b>\n"
-            . "💰 {$price} so'm\n\n"
-            . "✉️ Endi <b>shu botga</b> xabar yozing — sotuvchiga yetkaziladi.\n"
-            . "Akkaunt ma'lumotlarini so'rang, to'lovni amalga oshiring.\n\n"
-            . "⚠️ <b>To'lovni faqat admin tasdiqlashidan keyin o'tkazing!</b>"
-        );
+        // Deals guruhida forum topic yaratish
+        $topicId   = null;
+        $groupLink = null;
 
-        SendTelegramMessage::dispatch(
-            $deal->seller->telegram_id,
-            "💰 <b>Akkauntingizni sotib olmoqchi!</b>\n\n"
-            . "🎮 <b>{$level}</b>\n"
-            . "🛒 Xaridor: {$buyerName}\n\n"
-            . "✉️ Endi <b>shu botga</b> xabar yozing — xaridorga yetkaziladi.\n"
-            . "Xaridor to'lovini tasdiqlagan so'ng akkaunt ma'lumotlarini yuboring.\n\n"
-            . "⚠️ <b>Akkaunt parolini faqat to'lov kelganidan keyin yuboring!</b>",
-            [[['text' => '❌ Bitimdan chiqish', 'callback_data' => "seller_cancel_{$deal->id}"]]]
-        );
+        if ($this->telegram->dealsGroupId) {
+            $topicName = "Deal #{$dealId} — {$level}";
+            $topicId   = $this->telegram->createForumTopic($this->telegram->dealsGroupId, $topicName);
 
-        // Admin xabarini yangilash — bu sinxron qoladi (admin darhol ko'rishi kerak)
-        $this->telegram->editMessageText(
-            $adminChatId, $messageId,
-            "🤝 <b>Bitim #{$dealId} boshlandi!</b>\n\n"
+            if ($topicId) {
+                // Xaridor uchun alohida invite link
+                $buyerLink  = $this->telegram->createInviteLink($this->telegram->dealsGroupId, "Xaridor #{$dealId}");
+                // Sotuvchi uchun alohida invite link
+                $sellerLink = $this->telegram->createInviteLink($this->telegram->dealsGroupId, "Sotuvchi #{$dealId}");
+
+                $deal->update(['topic_id' => $topicId]);
+
+                SendTelegramMessage::dispatch(
+                    $deal->buyer->telegram_id,
+                    "🛒 <b>Sotib olish tasdiqlandi!</b>\n\n"
+                    . "🎮 <b>{$level}</b>\n"
+                    . "💰 {$price} so'm\n\n"
+                    . "👇 Quyidagi tugma orqali guruhga qo'shiling va sotuvchi bilan muloqot qiling:\n\n"
+                    . "⚠️ <b>To'lovni faqat admin tasdiqlashidan keyin o'tkazing!</b>",
+                    $buyerLink ? [[['text' => '💬 Guruhga kirish', 'url' => $buyerLink]]] : []
+                );
+
+                SendTelegramMessage::dispatch(
+                    $deal->seller->telegram_id,
+                    "💰 <b>Akkauntingizni sotib olmoqchi!</b>\n\n"
+                    . "🎮 <b>{$level}</b>\n"
+                    . "🛒 Xaridor: {$buyerName}\n\n"
+                    . "👇 Quyidagi tugma orqali guruhga qo'shiling:\n\n"
+                    . "⚠️ <b>Akkaunt parolini faqat to'lov kelganidan keyin yuboring!</b>",
+                    $sellerLink ? [[['text' => '💬 Guruhga kirish', 'url' => $sellerLink]]] : []
+                );
+
+                $groupLink = "https://t.me/c/" . ltrim((string) $this->telegram->dealsGroupId, '-100') . "/{$topicId}";
+            }
+        }
+
+        // Agar deals guruhi yo'q bo'lsa — bot relay orqali ishlaydi
+        if (!$topicId) {
+            SendTelegramMessage::dispatch(
+                $deal->buyer->telegram_id,
+                "🛒 <b>Sotib olish tasdiqlandi!</b>\n\n"
+                . "🎮 <b>{$level}</b>\n"
+                . "💰 {$price} so'm\n\n"
+                . "✉️ Endi <b>shu botga</b> xabar yozing — sotuvchiga yetkaziladi.\n\n"
+                . "⚠️ <b>To'lovni faqat admin tasdiqlashidan keyin o'tkazing!</b>"
+            );
+
+            SendTelegramMessage::dispatch(
+                $deal->seller->telegram_id,
+                "💰 <b>Akkauntingizni sotib olmoqchi!</b>\n\n"
+                . "🎮 <b>{$level}</b>\n"
+                . "🛒 Xaridor: {$buyerName}\n\n"
+                . "✉️ Endi <b>shu botga</b> xabar yozing — xaridorga yetkaziladi.\n\n"
+                . "⚠️ <b>Akkaunt parolini faqat to'lov kelganidan keyin yuboring!</b>",
+                [[['text' => '❌ Bitimdan chiqish', 'callback_data' => "seller_cancel_{$deal->id}"]]]
+            );
+        }
+
+        // Admin xabarini yangilash
+        $adminText = "🤝 <b>Bitim #{$dealId} boshlandi!</b>\n\n"
             . "🎮 {$level}\n"
             . "💰 {$price} so'm\n"
             . "🛒 Xaridor: {$buyerName}\n"
             . "👤 Sotuvchi: {$sellerName}\n\n"
-            . "✉️ Xabarlar bot orqali relay qilinmoqda.",
+            . ($groupLink ? "💬 <a href='{$groupLink}'>Guruhni ochish</a>" : "✉️ Bot relay orqali");
+
+        $this->telegram->editMessageText(
+            $adminChatId, $messageId,
+            $adminText,
             [[
                 ['text' => '✅ Savdo yakunlandi', 'callback_data' => "complete_deal_{$dealId}"],
                 ['text' => '❌ Bekor qilish',     'callback_data' => "cancel_deal_{$dealId}"],
