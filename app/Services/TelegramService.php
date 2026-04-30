@@ -115,6 +115,25 @@ class TelegramService
         }
     }
 
+    public function editMessageCaption(
+        string|int $chatId,
+        int $messageId,
+        string $newCaption,
+        array $inlineKeyboard = []
+    ): void {
+        $response = Http::post("{$this->baseUrl}/editMessageCaption", [
+            'chat_id'      => $chatId,
+            'message_id'   => $messageId,
+            'caption'      => $newCaption,
+            'parse_mode'   => 'HTML',
+            'reply_markup' => json_encode(['inline_keyboard' => $inlineKeyboard]),
+        ]);
+
+        if (!$response->successful()) {
+            Log::error('Telegram editMessageCaption failed', ['body' => $response->json()]);
+        }
+    }
+
     public function editMessageReplyMarkup(string|int $chatId, int $messageId, array $inlineKeyboard = []): void
     {
         $response = Http::post("{$this->baseUrl}/editMessageReplyMarkup", [

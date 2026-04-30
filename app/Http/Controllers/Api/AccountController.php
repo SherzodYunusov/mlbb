@@ -260,6 +260,17 @@ class AccountController extends Controller
             return response()->json(['success' => false, 'message' => 'Ruxsat yo\'q'], 403);
         }
 
+        $hasActiveDeal = Deal::where('account_id', $account->id)
+            ->whereIn('status', ['pending_admin', 'ongoing'])
+            ->exists();
+
+        if ($hasActiveDeal) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Faol bitim mavjud. Tahrirlash mumkin emas.',
+            ], 422);
+        }
+
         $data = $request->validate([
             'price'              => ['required', 'numeric', 'min:1000'],
             'heroes_count'       => ['required', 'integer', 'min:0', 'max:131'],

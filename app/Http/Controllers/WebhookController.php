@@ -365,7 +365,7 @@ class WebhookController extends Controller
 
         // Kanal xabarini "Sotib olish" tugmasi bilan yangilash
         if ($account->channel_message_id) {
-            $this->telegram->editMessageText(
+            $this->telegram->editMessageCaption(
                 $this->telegram->adminChannelId,
                 (int) $account->channel_message_id,
                 $this->buildAccountText($account, '✅ TASDIQLANDI — Sotuvda'),
@@ -790,7 +790,7 @@ class WebhookController extends Controller
 
         // Kanal xabaridan "Sotib olish" tugmasini olib tashlash
         if ($deal->account->channel_message_id) {
-            $this->telegram->editMessageText(
+            $this->telegram->editMessageCaption(
                 $this->telegram->adminChannelId,
                 (int) $deal->account->channel_message_id,
                 $this->buildAccountText($deal->account, '✅ SOTILDI'),

@@ -329,6 +329,7 @@
                             {{-- Image --}}
                             <img x-show="acc.thumbnail" :src="acc.thumbnail"
                                  @load="imgLoaded=true" :class="imgLoaded?'loaded':''"
+                                 onerror="this.style.display='none'"
                                  class="thumb-img absolute inset-0"
                                  loading="lazy" decoding="async" draggable="false">
 
@@ -829,37 +830,38 @@
                             </div>
                         </div>
 
-                        {{-- Action tugmalar (faqat active/pending uchun) --}}
-                        <template x-if="a.status === 'active' || a.status === 'pending'">
-                            <div class="flex gap-2 mt-3 pt-3 border-t border-line">
-                                <button @click="openEditModal(a)"
-                                        class="acc-action-btn"
-                                        style="border-color:rgba(99,179,237,.3);color:#63b3ed;background:rgba(99,179,237,.07);min-width:44px">
-                                    ✏️
-                                </button>
-                                <button @click="openMarkSoldModal(a)"
+                        {{-- Action tugmalar --}}
+                        <div x-data="{ confirmDel: false }" class="mt-3 pt-3 border-t border-line space-y-2">
+                            <div x-show="!confirmDel" class="flex gap-2">
+                                <template x-if="a.status === 'active' || a.status === 'pending'">
+                                    <button @click="openEditModal(a)"
+                                            class="acc-action-btn flex-1"
+                                            style="border-color:rgba(99,179,237,.3);color:#63b3ed;background:rgba(99,179,237,.07)">
+                                        ✏️ Tahrirlash
+                                    </button>
+                                </template>
+                                <button @click="confirmDel = true"
                                         class="acc-action-btn flex-1"
-                                        style="border-color:rgba(167,139,250,.3);color:#a78bfa;background:rgba(124,58,237,.08)">
-                                    💜 Sotildi deb belgilash
-                                </button>
-                                <button @click="openDeleteModal(a)"
-                                        class="acc-action-btn"
-                                        style="border-color:rgba(239,68,68,.3);color:#f87171;background:rgba(239,68,68,.07);min-width:44px">
-                                    🗑
-                                </button>
-                            </div>
-                        </template>
-
-                        {{-- Faqat o'chirish (sold/archived uchun) --}}
-                        <template x-if="a.status === 'sold' || a.status === 'archived'">
-                            <div class="flex mt-3 pt-3 border-t border-line">
-                                <button @click="openDeleteModal(a)"
-                                        class="acc-action-btn w-full"
-                                        style="border-color:rgba(239,68,68,.25);color:#f87171;background:rgba(239,68,68,.06)">
+                                        style="border-color:rgba(239,68,68,.3);color:#f87171;background:rgba(239,68,68,.07)">
                                     🗑 O'chirish
                                 </button>
                             </div>
-                        </template>
+                            <div x-show="confirmDel" class="space-y-2">
+                                <p class="text-xs text-center" style="color:#f87171">Haqiqatan ham o'chirasizmi?</p>
+                                <div class="flex gap-2">
+                                    <button @click="confirmDel = false"
+                                            class="acc-action-btn flex-1"
+                                            style="border-color:rgba(255,255,255,.15);color:#94a3b8;background:rgba(255,255,255,.05)">
+                                        Bekor
+                                    </button>
+                                    <button @click="deleteAccount(a); confirmDel = false"
+                                            class="acc-action-btn flex-1"
+                                            style="border-color:rgba(239,68,68,.5);color:#fff;background:rgba(239,68,68,.7)">
+                                        Ha, o'chir
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </template>
             </div>
@@ -872,88 +874,7 @@
         </div>
     </div>
 
-    {{-- ══════════════════════════════════════
-         DELETE MODAL
-    ══════════════════════════════════════ --}}
-    <template x-teleport="body">
-        <div x-show="deleteModal.open" x-transition.opacity class="action-sheet-overlay"
-             @click.self="deleteModal.open = false"></div>
-        <div x-show="deleteModal.open"
-             x-transition:enter="transition ease-out duration-200"
-             x-transition:enter-start="transform translate-y-full"
-             x-transition:enter-end="transform translate-y-0"
-             x-transition:leave="transition ease-in duration-150"
-             x-transition:leave-start="transform translate-y-0"
-             x-transition:leave-end="transform translate-y-full"
-             class="action-sheet">
-            <div class="flex flex-col items-center text-center mb-6">
-                <div class="w-14 h-14 rounded-full flex items-center justify-center mb-4"
-                     style="background:rgba(239,68,68,.12);border:1.5px solid rgba(239,68,68,.25)">
-                    <span class="text-2xl">🗑️</span>
-                </div>
-                <p class="text-base font-bold text-ink mb-1">E'lonni o'chirish</p>
-                <p class="text-xs text-muted leading-relaxed">
-                    <span class="font-semibold text-ink" x-text="deleteModal.account?.collection_level"></span>
-                    e'lonini butunlay o'chirasizmi?<br>Bu amalni qaytarib bo'lmaydi.
-                </p>
-            </div>
-            <div class="flex gap-3">
-                <button @click="deleteModal.open = false"
-                        class="btn btn-ghost flex-1" style="padding:13px">
-                    Bekor
-                </button>
-                <button @click="confirmDelete()"
-                        :disabled="deleteModal.loading"
-                        class="btn flex-1 font-semibold"
-                        style="background:rgba(239,68,68,.15);color:#f87171;border:1.5px solid rgba(239,68,68,.3);border-radius:14px;padding:13px">
-                    <span x-show="!deleteModal.loading">🗑 O'chirish</span>
-                    <span x-show="deleteModal.loading" class="anim-spin inline-block">⟳</span>
-                </button>
-            </div>
-        </div>
-    </template>
-
-    {{-- ══════════════════════════════════════
-         MARK-SOLD MODAL
-    ══════════════════════════════════════ --}}
-    <template x-teleport="body">
-        <div x-show="soldModal.open" x-transition.opacity class="action-sheet-overlay"
-             @click.self="soldModal.open = false"></div>
-        <div x-show="soldModal.open"
-             x-transition:enter="transition ease-out duration-200"
-             x-transition:enter-start="transform translate-y-full"
-             x-transition:enter-end="transform translate-y-0"
-             x-transition:leave="transition ease-in duration-150"
-             x-transition:leave-start="transform translate-y-0"
-             x-transition:leave-end="transform translate-y-full"
-             class="action-sheet">
-            <div class="flex flex-col items-center text-center mb-6">
-                <div class="w-14 h-14 rounded-full flex items-center justify-center mb-4"
-                     style="background:rgba(167,139,250,.12);border:1.5px solid rgba(167,139,250,.3)">
-                    <span class="text-2xl">💜</span>
-                </div>
-                <p class="text-base font-bold text-ink mb-1">Sotildi deb belgilash</p>
-                <p class="text-xs text-muted leading-relaxed">
-                    <span class="font-semibold text-ink" x-text="soldModal.account?.collection_level"></span>
-                    akkauntingizni sotilgan deb belgilaysizmi?<br>
-                    <span class="text-[11px]">E'lon bozordan olinadi, lekin tarixingizda saqlanib qoladi.</span>
-                </p>
-            </div>
-            <div class="flex gap-3">
-                <button @click="soldModal.open = false"
-                        class="btn btn-ghost flex-1" style="padding:13px">
-                    Bekor
-                </button>
-                <button @click="confirmMarkSold()"
-                        :disabled="soldModal.loading"
-                        class="btn flex-1 font-semibold"
-                        style="background:rgba(124,58,237,.15);color:#a78bfa;border:1.5px solid rgba(124,58,237,.3);border-radius:14px;padding:13px">
-                    <span x-show="!soldModal.loading">✅ Tasdiqlash</span>
-                    <span x-show="soldModal.loading" class="anim-spin inline-block">⟳</span>
-                </button>
-            </div>
-        </div>
-    </template>
+    {{-- Delete/Sold modallar olib tashlandi — inline confirm ishlatiladi --}}
 
     {{-- ══════════════════════════════════════
          EDIT MODAL (Full screen)
@@ -1755,8 +1676,7 @@ function app() {
         buyModal: { open: false, account: null, loading: false, success: false, error: '' },
 
         // ── Profile action modals ──
-        deleteModal: { open: false, account: null, loading: false },
-        soldModal:   { open: false, account: null, loading: false },
+        deleteErr: '',
         editModal:   { open: false, account: null, loading: false },
         eform: { price: '', heroes_count: '', skins_count: '', collection_level: '', description: '', ready_for_transfer: false },
         eerr:  {},
@@ -2097,25 +2017,17 @@ function app() {
         },
 
         // ── Profile: account actions ──
-        openDeleteModal(account) {
-            this.deleteModal = { open: true, account, loading: false };
-        },
-        openMarkSoldModal(account) {
-            this.soldModal = { open: true, account, loading: false };
-        },
-        async confirmDelete() {
-            if (!this.deleteModal.account || !this.tgId) return;
-            this.deleteModal.loading = true;
+        async deleteAccount(account) {
+            if (!this.tgId) return;
             try {
-                await axios.delete(`/api/accounts/${this.deleteModal.account.id}`, {
+                await axios.delete(`/api/accounts/${account.id}`, {
                     data: { telegram_id: this.tgId }
                 });
-                this.myAccounts = this.myAccounts.filter(a => a.id !== this.deleteModal.account.id);
-                this.deleteModal.open = false;
+                this.myAccounts = this.myAccounts.filter(a => a.id !== account.id);
             } catch(e) {
-                console.error(e);
-            } finally {
-                this.deleteModal.loading = false;
+                const msg = e.response?.data?.message ?? 'O\'chirishda xatolik yuz berdi';
+                this.deleteErr = msg;
+                setTimeout(() => this.deleteErr = '', 4000);
             }
         },
         async confirmMarkSold() {
