@@ -831,7 +831,7 @@
                         </div>
 
                         {{-- Action tugmalar --}}
-                        <div x-data="{ confirmDel: false }" class="mt-3 pt-3 border-t border-line space-y-2">
+                        <div x-data="{ confirmDel: false, delErr: '', delLoading: false }" class="mt-3 pt-3 border-t border-line space-y-2">
                             <div x-show="!confirmDel" class="flex gap-2">
                                 <template x-if="a.status === 'active' || a.status === 'pending'">
                                     <button @click="openEditModal(a)"
@@ -840,7 +840,7 @@
                                         ✏️ Tahrirlash
                                     </button>
                                 </template>
-                                <button @click="confirmDel = true"
+                                <button @click="confirmDel = true; delErr = ''"
                                         class="acc-action-btn flex-1"
                                         style="border-color:rgba(239,68,68,.3);color:#f87171;background:rgba(239,68,68,.07)">
                                     🗑 O'chirish
@@ -848,16 +848,19 @@
                             </div>
                             <div x-show="confirmDel" class="space-y-2">
                                 <p class="text-xs text-center" style="color:#f87171">Haqiqatan ham o'chirasizmi?</p>
+                                <div x-show="delErr" class="text-xs text-center px-2 py-1.5 rounded-lg" style="color:#fca5a5;background:rgba(239,68,68,.12)" x-text="delErr"></div>
                                 <div class="flex gap-2">
                                     <button @click="confirmDel = false"
                                             class="acc-action-btn flex-1"
                                             style="border-color:rgba(255,255,255,.15);color:#94a3b8;background:rgba(255,255,255,.05)">
                                         Bekor
                                     </button>
-                                    <button @click="deleteAccount(a); confirmDel = false"
+                                    <button @click="async () => { delLoading=true; try { await axios.delete('/api/accounts/'+a.id, {data:{telegram_id:tgId}}); myAccounts=myAccounts.filter(x=>x.id!==a.id); } catch(e){ delErr=e.response?.data?.message??'Xatolik'; } finally{ delLoading=false; } }"
+                                            :disabled="delLoading"
                                             class="acc-action-btn flex-1"
                                             style="border-color:rgba(239,68,68,.5);color:#fff;background:rgba(239,68,68,.7)">
-                                        Ha, o'chir
+                                        <span x-show="!delLoading">Ha, o'chir</span>
+                                        <span x-show="delLoading">⟳</span>
                                     </button>
                                 </div>
                             </div>
